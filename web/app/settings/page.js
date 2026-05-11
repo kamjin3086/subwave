@@ -10,13 +10,57 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [jingleText, setJingleText] = useState('');
   const [taggerLimit, setTaggerLimit] = useState('50');
+  // Mixer settings — local form state, only synced to server on Save
+  const [form, setForm] = useState(null);
+  const [pendingRestart, setPendingRestart] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
 
   const refresh = async () => {
     try {
       const r = await fetch(`${API_URL}/settings`);
       const j = await r.json();
       setData(j); setErr(null);
+      // Only seed the form once — don't clobber unsaved user edits
+      if (!form && j.values) {
+        setForm({
+          jingleRatio: String(j.values.jingleRatio),
+          crossfadeDuration: String(j.values.crossfadeDuration),
+          weather: { ...j.values.weather, lat: String(j.values.weather.lat), lng: String(j.values.weather.lng) },
+        });
+      }
     } catch (e) { setErr(e.message); }
+  };
+
+  const saveSettings = async (patch) => {
+    setBusy(true); setSaveMsg(null);
+    try {
+      const r = await fetch(`${API_URL}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'failed');
+      if (j.requiresRestart) setPendingRestart(true);
+      setSaveMsg({ tone: 'ok', text: j.requiresRestart ? 'saved — restart the mixer to apply' : 'saved' });
+      await refresh();
+    } catch (e) {
+      setSaveMsg({ tone: 'err', text: e.message });
+    } finally { setBusy(false); }
+  };
+
+  const restartMixer = async () => {
+    if (!confirm('Restart the mixer? Broadcast will drop for ~3-5 seconds.')) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`${API_URL}/restart-mixer`, { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'failed');
+      setPendingRestart(false);
+      setSaveMsg({ tone: 'ok', text: 'mixer restarting — give it a few seconds' });
+    } catch (e) {
+      setSaveMsg({ tone: 'err', text: e.message });
+    } finally { setBusy(false); }
   };
 
   useEffect(() => {
@@ -258,15 +302,119 @@ export default function SettingsPage() {
               </div>
             </Section>
 
+            {/* MIXER SETTINGS */}
+            {form && (
+              <Section title="Mixer settings">
+                <div className="space-y-4">
+                  <FormRow
+                    label="Jingle frequency"
+                    hint={`1 jingle every N music tracks (current: ${data.values?.jingleRatio})`}
+                    requiresRestart
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={form.jingleRatio}
+                      onChange={e => setForm(f => ({ ...f, jingleRatio: e.target.value }))}
+                      className="bg-stone-950/80 border border-amber-900/40 focus:border-amber-500 outline-none px-3 py-1.5 text-amber-100 w-28"
+                    />
+                  </FormRow>
+
+                  <FormRow
+                    label="Crossfade duration"
+                    hint={`Seconds of overlap between tracks (current: ${data.values?.crossfadeDuration}s)`}
+                    requiresRestart
+                  >
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      step={0.5}
+                      value={form.crossfadeDuration}
+                      onChange={e => setForm(f => ({ ...f, crossfadeDuration: e.target.value }))}
+                      className="bg-stone-950/80 border border-amber-900/40 focus:border-amber-500 outline-none px-3 py-1.5 text-amber-100 w-28"
+                    />
+                    <span className="text-amber-500/50 text-xs ml-2">sec</span>
+                  </FormRow>
+
+                  <FormRow
+                    label="Weather location"
+                    hint={`Used for DJ context + Open-Meteo lookups (current: ${data.values?.weather?.locationName} @ ${data.values?.weather?.lat}, ${data.values?.weather?.lng})`}
+                  >
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="text"
+                        placeholder="name"
+                        value={form.weather.locationName}
+                        onChange={e => setForm(f => ({ ...f, weather: { ...f.weather, locationName: e.target.value } }))}
+                        className="bg-stone-950/80 border border-amber-900/40 focus:border-amber-500 outline-none px-3 py-1.5 text-amber-100 w-44"
+                      />
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="lat"
+                        value={form.weather.lat}
+                        onChange={e => setForm(f => ({ ...f, weather: { ...f.weather, lat: e.target.value } }))}
+                        className="bg-stone-950/80 border border-amber-900/40 focus:border-amber-500 outline-none px-3 py-1.5 text-amber-100 w-32"
+                      />
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="lng"
+                        value={form.weather.lng}
+                        onChange={e => setForm(f => ({ ...f, weather: { ...f.weather, lng: e.target.value } }))}
+                        className="bg-stone-950/80 border border-amber-900/40 focus:border-amber-500 outline-none px-3 py-1.5 text-amber-100 w-32"
+                      />
+                    </div>
+                  </FormRow>
+
+                  <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-amber-900/30">
+                    <button
+                      onClick={() => saveSettings({
+                        jingleRatio: parseInt(form.jingleRatio, 10),
+                        crossfadeDuration: parseFloat(form.crossfadeDuration),
+                        weather: {
+                          lat: parseFloat(form.weather.lat),
+                          lng: parseFloat(form.weather.lng),
+                          locationName: form.weather.locationName,
+                        },
+                      })}
+                      disabled={busy}
+                      className="bg-amber-500 hover:bg-amber-400 disabled:bg-amber-900/40 disabled:cursor-not-allowed text-stone-950 text-[10px] tracking-widest uppercase px-3 py-1.5 font-bold"
+                    >
+                      save settings
+                    </button>
+                    {pendingRestart && (
+                      <button
+                        onClick={restartMixer}
+                        disabled={busy}
+                        className="bg-red-500/90 hover:bg-red-400 disabled:bg-red-900/40 disabled:cursor-not-allowed text-stone-950 text-[10px] tracking-widest uppercase px-3 py-1.5 font-bold"
+                      >
+                        restart mixer
+                      </button>
+                    )}
+                    {saveMsg && (
+                      <span className={`text-xs ${saveMsg.tone === 'err' ? 'text-red-300' : 'text-emerald-300'}`}>
+                        {saveMsg.text}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] tracking-wider text-amber-500/40 mt-1">
+                    Weather location applies live · Jingle freq + crossfade require a mixer restart
+                  </div>
+                </div>
+              </Section>
+            )}
+
             {/* SYSTEM */}
             <Section title="System">
               <div className="grid sm:grid-cols-2 gap-2 text-xs">
                 <KV k="Ollama" v={`${data.ollama.model} @ ${data.ollama.url}`} />
-                <KV k="Weather location" v={data.location} />
+                <KV k="Weather location" v={data.values?.weather?.locationName} />
               </div>
               <div className="text-amber-200/40 text-xs mt-3 italic">
-                Persona prompt, voice, weather location, jingle frequency are still environment-config / code edits.
-                Will move here once they're worth a UI.
+                DJ persona prompt and voice file are still code-level edits — change <code className="text-amber-300">ollama.js</code> DJ_SYSTEM and the Piper voice in <code className="text-amber-300">.env</code>.
               </div>
             </Section>
           </>
@@ -289,6 +437,23 @@ function Section({ title, children }) {
 
 function Row({ children }) {
   return <div className="flex items-start justify-between gap-4 py-2">{children}</div>;
+}
+
+function FormRow({ label, hint, requiresRestart, children }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-amber-100 text-sm">{label}</span>
+        {requiresRestart && (
+          <span className="text-[9px] tracking-widest uppercase text-amber-500/60 border border-amber-900/50 px-1.5 py-0.5">
+            restart required
+          </span>
+        )}
+      </div>
+      {hint && <div className="text-amber-200/50 text-xs">{hint}</div>}
+      <div className="flex items-center flex-wrap">{children}</div>
+    </div>
+  );
 }
 
 function Toggle({ on, onChange, disabled }) {

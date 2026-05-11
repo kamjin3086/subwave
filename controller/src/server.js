@@ -9,7 +9,9 @@ import * as subsonic from './subsonic.js';
 import * as ollama from './ollama.js';
 import * as library from './library.js';
 import * as jingles from './jingles.js';
-import { getFullContext } from './context.js';
+import * as settings from './settings.js';
+import { restartLiquidsoap } from './liquidsoap-control.js';
+import { getFullContext, invalidateWeatherCache } from './context.js';
 import { queue } from './queue.js';
 import { startScheduler } from './scheduler.js';
 
@@ -180,6 +182,8 @@ app.delete('/jingles/:filename', async (req, res) => {
 app.get('/settings', async (req, res) => {
   try {
     await library.load();
+    await settings.load();
+    const s = settings.get();
     res.json({
       autoPick: queue.autoPick,
       pickerBusy: queue.pickerBusy,
@@ -187,8 +191,50 @@ app.get('/settings', async (req, res) => {
       libraryStats: library.stats(),
       tagger: { ...tagger, lastLog: tagger.lastLog.slice(-30) },
       ollama: { url: config.ollama.url, model: config.ollama.model },
-      location: config.weather.locationName,
+      values: {
+        jingleRatio: s.jingleRatio,
+        crossfadeDuration: s.crossfadeDuration,
+        weather: s.weather,
+      },
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /settings — update values. Returns { requiresRestart } so the UI can
+// prompt the user to restart the mixer for jingle freq / crossfade changes.
+// ---------------------------------------------------------------------------
+app.post('/settings', async (req, res) => {
+  try {
+    const result = await settings.update(req.body || {});
+    // Apply live: weather location flows through config.weather to context.js
+    if ('weather' in (req.body || {})) {
+      config.weather.lat = result.saved.weather.lat;
+      config.weather.lng = result.saved.weather.lng;
+      config.weather.locationName = result.saved.weather.locationName;
+      invalidateWeatherCache();
+      queue.log('scheduler', `weather location → ${result.saved.weather.locationName}`);
+    }
+    if (result.requiresRestart) {
+      queue.log('scheduler', `mixer settings changed — Liquidsoap restart required`);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /restart-mixer — telnet → Liquidsoap → shutdown → container restart
+// Brief gap of dead air covered by Icecast burst buffer + emergency.mp3.
+// ---------------------------------------------------------------------------
+app.post('/restart-mixer', async (req, res) => {
+  try {
+    await restartLiquidsoap();
+    queue.log('scheduler', 'mixer restart requested');
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -347,10 +393,23 @@ app.get('/debug', async (req, res) => {
 // ---------------------------------------------------------------------------
 // START
 // ---------------------------------------------------------------------------
-app.listen(config.server.port, () => {
+app.listen(config.server.port, async () => {
   console.log(`SUB/WAVE controller on :${config.server.port}`);
+
+  // Layer persisted settings over the static config defaults
+  try {
+    await settings.load();
+    const s = settings.get();
+    config.weather.lat = s.weather.lat;
+    config.weather.lng = s.weather.lng;
+    config.weather.locationName = s.weather.locationName;
+    await settings.ensureLiquidsoapSettingsFile();
+    console.log(`[settings] loaded. jingleRatio=${s.jingleRatio} crossfadeDuration=${s.crossfadeDuration} location=${s.weather.locationName}`);
+  } catch (err) {
+    console.error('[settings] load failed:', err.message);
+  }
+
   queue.startWatcher();
   startScheduler();
-  // Auto-generate the default station ident on first boot (idempotent)
   jingles.ensureDefaultIdent().catch(err => console.error('[jingles] ident generation failed:', err.message));
 });

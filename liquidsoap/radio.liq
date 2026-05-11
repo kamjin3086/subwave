@@ -6,6 +6,35 @@ settings.log.level := 4
 settings.log.file := true
 settings.log.file.path := "/var/log/liquidsoap/radio.log"
 
+# Telnet server — used by the controller to send a "restart" command after
+# changing settings that this script reads at startup. Bound to all interfaces
+# on the container's private network only; NOT exposed to the host.
+settings.server.telnet := true
+settings.server.telnet.bind_addr := "0.0.0.0"
+settings.server.telnet.port := 1234
+
+# ---------------------------------------------------------------------------
+# RUNTIME SETTINGS — written by the controller at startup, read here.
+# Two tiny text files: one int, one float. Falls back to defaults if missing.
+# ---------------------------------------------------------------------------
+
+jingle_ratio = ref(30)
+crossfade_duration = ref(4.0)
+
+if file.exists("/var/sub-wave/liquidsoap_jingle_ratio.txt") then
+  raw = string.trim(file.contents("/var/sub-wave/liquidsoap_jingle_ratio.txt"))
+  v = int_of_string(default=30, raw)
+  if v > 0 then jingle_ratio := v end
+end
+
+if file.exists("/var/sub-wave/liquidsoap_crossfade.txt") then
+  raw = string.trim(file.contents("/var/sub-wave/liquidsoap_crossfade.txt"))
+  v = float_of_string(default=4.0, raw)
+  if v >= 0.0 then crossfade_duration := v end
+end
+
+log("settings loaded: jingle_ratio=#{!jingle_ratio} crossfade_duration=#{!crossfade_duration}")
+
 # ---------------------------------------------------------------------------
 # QUEUE — read tracks from the controller
 # ---------------------------------------------------------------------------
@@ -53,7 +82,7 @@ music = fallback(
 
 # Smart crossfade — overlapping fade between tracks based on their loudness
 music = crossfade(
-  duration=4.0,
+  duration=!crossfade_duration,
   smart=true,
   music
 )
@@ -98,7 +127,7 @@ jingles = playlist(
 )
 
 radio = rotate(
-  weights=[1, 30],  # 1 jingle for every 30 tracks
+  weights=[1, !jingle_ratio],  # 1 jingle for every N music tracks (settings.json)
   [jingles, radio]
 )
 
@@ -163,4 +192,20 @@ output.file(
   reopen_when={0m0s},
   "/var/sub-wave/archive/%Y-%m-%d/%H-00.mp3",
   radio
+)
+
+# ---------------------------------------------------------------------------
+# CONTROL — custom telnet command for the controller to trigger a restart
+# after writing new settings. Container restart-policy brings us back ~3s later
+# with the new values applied at the top of this script.
+# ---------------------------------------------------------------------------
+server.register(
+  "restart",
+  description="Shut down so the container restarts with new settings",
+  usage="restart",
+  fun(_) -> begin
+    log("Restart requested via server command")
+    shutdown()
+    "OK"
+  end
 )

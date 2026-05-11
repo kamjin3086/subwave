@@ -23,6 +23,8 @@ state/now-playing.json
 state/emergency.mp3
 state/jingles.json
 state/moods.json
+state/settings.json
+state/liquidsoap_*.txt
 
 # OS / editor
 .DS_Store

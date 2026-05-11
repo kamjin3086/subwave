@@ -43,6 +43,12 @@ export function getFestivalContext(date = new Date()) {
 let weatherCache = { data: null, fetchedAt: 0 };
 const WEATHER_TTL_MS = 30 * 60 * 1000;
 
+// Force the next getWeather() call to re-fetch — used when the user changes
+// their location in /settings.
+export function invalidateWeatherCache() {
+  weatherCache = { data: null, fetchedAt: 0 };
+}
+
 export async function getWeather() {
   if (weatherCache.data && Date.now() - weatherCache.fetchedAt < WEATHER_TTL_MS) {
     return weatherCache.data;
