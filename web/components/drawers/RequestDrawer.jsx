@@ -1,21 +1,70 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-
-const MOOD_CHIPS = [
-  'late-night driving',
-  'more like this',
-  'something punjabi',
-  'surprise me',
-  'rainy day',
-];
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const SUCCESS_HOLD_MS = 2800;
+
+// Pull a handful of context-aware suggestion chips out of what's already
+// on-air. Each chip carries an attribution so the listener understands why
+// it's being offered — "from track", "from time", etc. — instead of a flat
+// list of canned moods. Order: most-specific (current track) first, weakest
+// (random) last. Capped at 5 so the drawer doesn't sprawl.
+function buildSuggestions(nowPlaying, context) {
+  const seen = new Set();
+  const out = [];
+  const push = (text, attribution) => {
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ text, attribution });
+  };
+
+  if (nowPlaying?.artist) {
+    // The controller has a dedicated "more like this" code path that picks
+    // another song by the currently-playing artist, so attribute it that way
+    // — clearer than vague "track-derived".
+    push('more like this', `more ${nowPlaying.artist}`);
+  }
+
+  const festival = context?.festival?.name;
+  if (festival) {
+    push(`${festival.toLowerCase()} mood`, `festival`);
+  }
+
+  const vibe = context?.time?.vibe || context?.time?.show;
+  if (vibe) {
+    push(`${vibe} vibes`, `right now`);
+  }
+
+  const cond = context?.weather?.condition;
+  const weatherMap = {
+    clear: 'sunny afternoon',
+    sunny: 'sunny afternoon',
+    cloudy: 'overcast mood',
+    rain: 'rainy day',
+    rainy: 'rainy day',
+    drizzle: 'rainy day',
+    snow: 'snowy night',
+    snowy: 'snowy night',
+    fog: 'foggy morning',
+    foggy: 'foggy morning',
+    thunderstorm: 'stormy night',
+  };
+  if (cond && cond !== 'unknown') {
+    push(weatherMap[cond] || `${cond} day`, `weather`);
+  }
+
+  // Always-available fallback.
+  push('surprise me', `random`);
+
+  return out.slice(0, 5);
+}
 
 export default function RequestDrawer({
   requestText, setRequestText,
   requesterName, setRequesterName,
   isSubmitting, onSubmit, onClose,
+  nowPlaying, context,
 }) {
   const taRef = useRef(null);
   // `result` mirrors the controller response: { success, ack, track, message }.
@@ -61,26 +110,11 @@ export default function RequestDrawer({
         and the DJ acknowledges you on-air.
       </p>
 
-      <div className="flex flex-wrap" style={{ gap: 6, margin: '18px 0' }}>
-        {MOOD_CHIPS.map(m => (
-          <button
-            key={m}
-            onClick={() => { setRequestText(m); taRef.current?.focus(); }}
-            className="cursor-pointer v3-focus"
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--ink)',
-              color: 'var(--ink)',
-              padding: '6px 12px',
-              fontSize: 11,
-              letterSpacing: '0.1em',
-              fontFamily: 'inherit',
-            }}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
+      <SuggestionChips
+        nowPlaying={nowPlaying}
+        context={context}
+        onPick={text => { setRequestText(text); taRef.current?.focus(); }}
+      />
 
       <input
         type="text"
@@ -251,6 +285,56 @@ function SuccessCard({ result }) {
       >
         Closing…
       </div>
+    </div>
+  );
+}
+
+// Context-aware chip row. Each chip is a two-line button: the prompt text on
+// top, a small attribution caption underneath ("more <artist>", "weather",
+// "festival", "right now", "random"). Listeners see *why* a suggestion is
+// being offered instead of a flat canned list.
+function SuggestionChips({ nowPlaying, context, onPick }) {
+  const chips = useMemo(
+    () => buildSuggestions(nowPlaying, context),
+    [nowPlaying?.artist, nowPlaying?.title, context?.festival?.name,
+     context?.time?.vibe, context?.time?.show, context?.weather?.condition]
+  );
+
+  return (
+    <div className="flex flex-wrap" style={{ gap: 6, margin: '18px 0' }}>
+      {chips.map(chip => (
+        <button
+          key={chip.text}
+          onClick={() => onPick(chip.text)}
+          className="cursor-pointer v3-focus"
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--ink)',
+            color: 'var(--ink)',
+            padding: '6px 12px',
+            fontFamily: 'inherit',
+            textAlign: 'left',
+            lineHeight: 1.15,
+          }}
+          title={`Suggested via ${chip.attribution}`}
+        >
+          <span style={{ display: 'block', fontSize: 11, letterSpacing: '0.08em' }}>
+            {chip.text}
+          </span>
+          <span
+            style={{
+              display: 'block',
+              fontSize: 8,
+              letterSpacing: '0.22em',
+              textTransform: 'uppercase',
+              color: 'var(--muted)',
+              marginTop: 3,
+            }}
+          >
+            {chip.attribution}
+          </span>
+        </button>
+      ))}
     </div>
   );
 }

@@ -136,6 +136,8 @@ export default function PlayerApp({ contained = false }) {
             isSubmitting={isSubmitting}
             onSubmit={submitRequest}
             onClose={() => setDrawer(null)}
+            nowPlaying={nowPlaying}
+            context={context}
           />
         )}
       </Sheet>

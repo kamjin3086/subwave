@@ -43,15 +43,9 @@ export default function Waveform({ audioRef, tunedIn, progress }) {
   return (
     <div
       ref={containerRef}
-      className="absolute pointer-events-none flex items-center"
+      className="absolute pointer-events-none flex items-center inset-x-3 sm:left-0 sm:right-[96px] bottom-[80px] sm:bottom-[100px] h-[110px] sm:h-[160px] px-1 sm:px-8 gap-[1px] sm:gap-[2px]"
       style={{
-        left: 0,
-        right: 96,
-        bottom: 100,
-        height: 160,
-        padding: '0 32px',
-        gap: 2,
-        opacity: 0.18,
+        opacity: 0.22,
       }}
       aria-hidden="true"
     >

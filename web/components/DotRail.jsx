@@ -10,45 +10,68 @@ const ITEMS = [
 export default function DotRail({ counts, active, onSelect }) {
   return (
     <div
-      className="absolute z-20 flex flex-col items-center justify-center"
+      className="absolute z-20 flex flex-col items-center justify-center sm:[border-left:1px_solid_var(--ink)]"
       style={{
         top: 80,
         right: 0,
         bottom: 80,
         width: 96,
-        borderLeft: '1px solid var(--ink)',
         gap: 4,
       }}
     >
       {ITEMS.map(item => {
         const isActive = active === item.k;
-        const n = item.k === 'request' ? '+' : (counts?.[item.k] ?? 0);
+        const isRequest = item.k === 'request';
+        const n = isRequest ? '+' : (counts?.[item.k] ?? 0);
         return (
           <button
             key={item.k}
             onClick={() => onSelect(isActive ? null : item.k)}
             className="w-full flex flex-col items-center gap-[6px] cursor-pointer v3-focus"
             style={{
-              background: isActive ? 'var(--ink)' : 'transparent',
+              background: isActive
+                ? 'var(--ink)'
+                : isRequest
+                  ? 'rgba(197, 48, 42, 0.08)'
+                  : 'transparent',
               color: isActive ? 'var(--bg)' : 'var(--ink)',
               border: 'none',
               padding: '14px 8px',
               fontFamily: 'inherit',
+              boxShadow: isRequest && !isActive
+                ? 'inset 2px 0 0 var(--accent)'
+                : undefined,
             }}
             aria-pressed={isActive}
           >
             <span
               className="v3-tab-num"
               style={{
-                fontSize: 22,
-                fontWeight: 200,
+                fontSize: isRequest ? 26 : 22,
+                fontWeight: isRequest ? 600 : 200,
                 lineHeight: 1,
-                color: isActive ? 'var(--accent)' : 'var(--ink)',
+                color: isActive
+                  ? 'var(--accent)'
+                  : isRequest
+                    ? 'var(--accent)'
+                    : 'var(--ink)',
               }}
             >
               {n}
             </span>
-            <span style={{ fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase' }}>
+            <span
+              style={{
+                fontSize: 9,
+                letterSpacing: '0.3em',
+                textTransform: 'uppercase',
+                color: isActive
+                  ? 'var(--bg)'
+                  : isRequest
+                    ? 'var(--accent)'
+                    : 'var(--ink)',
+                fontWeight: isRequest ? 700 : 'inherit',
+              }}
+            >
               {item.l}
             </span>
           </button>

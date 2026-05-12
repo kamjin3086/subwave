@@ -24,8 +24,8 @@ export default function TransportBar({
 
   return (
     <div
-      className="absolute bottom-0 left-0 right-0 z-20"
-      style={{ borderTop: '1px solid var(--ink)', background: 'var(--bg)' }}
+      className="absolute bottom-0 left-0 right-0 z-20 [border-top:none] sm:[border-top:1px_solid_var(--ink)]"
+      style={{ background: 'var(--bg)' }}
     >
       {/* Hairline progress along the top edge of the bar. */}
       {duration > 0 && (
@@ -41,6 +41,15 @@ export default function TransportBar({
           }}
           aria-hidden="true"
         />
+      )}
+
+      {/* Mobile-only ticker row above the controls. Marquee gets its own
+          full-width strip so it never collides with the Tune Out button.
+          On sm: and up the ticker renders inline in the controls row below. */}
+      {showTicker && (
+        <div className="sm:hidden flex items-center px-2 py-0">
+          <BroadcastTicker items={djLog} enabled={true} />
+        </div>
       )}
 
       <div className="flex items-center gap-3 sm:gap-6 px-4 py-3 sm:px-8 sm:py-5">
@@ -65,22 +74,25 @@ export default function TransportBar({
           {tunedIn ? 'Tune Out' : 'Tune In'}
         </button>
 
-        {showTicker ? (
-          <BroadcastTicker items={djLog} enabled={true} />
-        ) : (
-          <div
-            className="flex-1 min-w-0 v3-caption truncate"
-            style={{ color: 'var(--muted)' }}
-            title={songLine ?? ''}
-          >
-            {songLine && (
-              <>
-                <span style={{ color: 'var(--ink)' }}>{nowPlaying.title}</span>
-                {nowPlaying.artist && <> · {nowPlaying.artist}</>}
-              </>
-            )}
+        {/* Desktop ticker (mobile gets it as the strip above). Otherwise the
+            song line takes the centre slot on both. */}
+        {showTicker && (
+          <div className="hidden sm:flex flex-1 min-w-0">
+            <BroadcastTicker items={djLog} enabled={true} />
           </div>
         )}
+        <div
+          className={`flex-1 min-w-0 v3-caption truncate items-center ${showTicker ? 'flex sm:hidden' : 'flex'}`}
+          style={{ color: 'var(--muted)' }}
+          title={songLine ?? ''}
+        >
+          {songLine && (
+            <>
+              <span style={{ color: 'var(--ink)' }}>{nowPlaying.title}</span>
+              {nowPlaying.artist && <span>&nbsp;·&nbsp;{nowPlaying.artist}</span>}
+            </>
+          )}
+        </div>
 
         <div className="flex items-center gap-2 sm:gap-[10px] shrink-0">
           <span className="hidden sm:inline v3-caption" style={{ color: 'var(--muted)' }}>Vol</span>

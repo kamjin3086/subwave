@@ -25,8 +25,8 @@ export function Sheet({ open, onOpenChange, title, children, container }) {
             pos,
             contained
               ? 'top-[64px] bottom-[64px] right-[16px] w-[min(420px,calc(100%-32px))]'
-              : 'top-[80px] bottom-[80px] right-[96px] w-[460px]',
-            'p-7 outline-none',
+              : 'inset-x-0 top-[64px] bottom-[64px] w-full sm:left-auto sm:right-[96px] sm:top-[80px] sm:bottom-[80px] sm:w-[460px]',
+            'p-5 sm:p-7 outline-none',
           )}
           style={{
             borderLeft: '1px solid var(--ink)',

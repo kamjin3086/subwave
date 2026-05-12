@@ -135,9 +135,9 @@ export default function BroadcastTicker({ items, enabled }) {
     >
       <Row
         items={feed}
-        duration={isMobile ? 220 : 320}
+        duration={isMobile ? 540 : 320}
         direction="left"
-        opacity={1}
+        opacity={isMobile ? 0.45 : 1}
         fontSize={isMobile ? 12 : 14}
         paused={paused}
       />

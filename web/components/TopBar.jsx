@@ -52,16 +52,25 @@ export default function TopBar({ tunedIn, context, djName, listeners, onOpenSett
         )}
       </div>
       <div
-        className="flex items-baseline gap-3 sm:gap-[18px] v3-caption shrink-0"
+        className="flex items-center gap-3 sm:gap-[18px] v3-caption shrink-0"
         style={{ color: 'var(--muted)' }}
       >
-        <span className="whitespace-nowrap">
-          <span style={{ color: tunedIn ? 'var(--accent)' : 'var(--muted)' }}>●</span>
-          <span className="hidden sm:inline">{' '}{tunedIn ? 'listening' : 'not tuned'}</span>
+        <span className="whitespace-nowrap inline-flex items-center gap-1">
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: tunedIn ? 'var(--accent)' : 'var(--muted)',
+            }}
+          />
+          <span className="hidden sm:inline">{tunedIn ? 'listening' : 'not tuned'}</span>
         </span>
         {listeners?.current != null && (
           <span
-            className="whitespace-nowrap v3-tab-num inline-flex items-center gap-1.5"
+            className="whitespace-nowrap v3-tab-num inline-flex items-center gap-1.5 leading-none"
             style={{ color: listeners.current > 0 ? 'var(--ink)' : 'var(--muted)', fontWeight: 600 }}
             title={`${listeners.current} listening · peak ${listeners.peak ?? 0}`}
             aria-label={`${listeners.current} listening`}
@@ -73,7 +82,7 @@ export default function TopBar({ tunedIn, context, djName, listeners, onOpenSett
         {onToggleTicker && (
           <button
             onClick={onToggleTicker}
-            className="v3-focus cursor-pointer"
+            className="v3-focus cursor-pointer inline-flex items-center"
             style={{ color: tickerOn ? 'var(--accent)' : 'var(--muted)' }}
             aria-label={tickerOn ? 'Hide booth feed ticker' : 'Show booth feed ticker'}
             title={tickerOn ? 'Hide booth ticker' : 'Show booth ticker'}
@@ -83,7 +92,7 @@ export default function TopBar({ tunedIn, context, djName, listeners, onOpenSett
         )}
         <button
           onClick={onOpenSettings}
-          className="v3-focus cursor-pointer"
+          className="v3-focus cursor-pointer hidden sm:inline-flex items-center"
           style={{ color: 'var(--ink)' }}
           aria-label="Settings"
         >

@@ -34,3 +34,4 @@ state/liquidsoap_*.txt
 *.swp
 .idea/
 .vscode/
+tmp/
