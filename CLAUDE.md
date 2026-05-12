@@ -101,4 +101,4 @@ The web app uses same-origin defaults (`/api`, `/stream.mp3`) in `web/app/page.j
 - Touching `radio.liq`: the `on_track_change` hook must stay attached to the `music` source, not to a downstream stage — moving it loses metadata fidelity.
 - Touching Subsonic: keep using `getAnnotatedUri` for anything going to Liquidsoap. Raw stream URLs work but lose metadata until ID3 arrives.
 - LLM responses are not retried; `matchRequest` does best-effort `{…}` recovery via regex if JSON parsing fails. Don't add aggressive retry without considering that Ollama on a homelab box may be slow but is reliable.
-- Festivals in `context.js` are hand-curated for the operator (Sikh/UK calendar). Adding/removing them changes what the autonomous DJ plays around those dates.
+- Festivals in `context.js` are a hand-curated general calendar (Western/UK plus a couple of cross-cultural markers like Diwali and Vaisakhi). Fixed-date only — lunar-shifted holidays (Easter, Eid, Lunar New Year) aren't representable in the current schema. Adding/removing entries changes what the autonomous DJ plays around those dates.

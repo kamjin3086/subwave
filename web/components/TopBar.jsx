@@ -2,7 +2,33 @@
 
 import { Settings, Radio, Headphones } from 'lucide-react';
 
-export default function TopBar({ tunedIn, transmission, djName, listeners, onOpenSettings, tickerOn, onToggleTicker }) {
+// Compact, mood-flavored subtitle for the header: festival > show + vibe + weather.
+// Examples: "late · late hours · 6° clear" · "diwali · festival · 18° clear".
+function buildTagline(context) {
+  if (!context) return null;
+  const parts = [];
+
+  if (context.festival?.name) {
+    parts.push(context.festival.name.toLowerCase());
+    if (context.festival.mood) parts.push(context.festival.mood);
+  } else {
+    if (context.time?.show) parts.push(context.time.show);
+    if (context.time?.vibe && context.time.vibe !== context.time?.show) {
+      parts.push(context.time.vibe);
+    }
+  }
+
+  if (context.weather && context.weather.condition && context.weather.condition !== 'unknown') {
+    const t = context.weather.temp;
+    const cond = context.weather.condition;
+    parts.push(Number.isFinite(t) ? `${t}° ${cond}` : cond);
+  }
+
+  return parts.length ? parts.join(' · ') : null;
+}
+
+export default function TopBar({ tunedIn, context, djName, listeners, onOpenSettings, tickerOn, onToggleTicker }) {
+  const tagline = buildTagline(context);
   return (
     <div
       className="absolute top-0 left-0 right-0 flex items-baseline justify-between gap-3 z-20 px-4 py-4 sm:px-8 sm:py-6"
@@ -15,9 +41,15 @@ export default function TopBar({ tunedIn, transmission, djName, listeners, onOpe
             with {djName}
           </span>
         )}
-        <span className="hidden md:inline v3-caption shrink-0" style={{ color: 'var(--muted)' }}>
-          vol. 1 · transmission {String(transmission ?? 241).padStart(4, '0')}
-        </span>
+        {tagline && (
+          <span
+            className="hidden md:inline v3-caption truncate"
+            style={{ color: 'var(--muted)' }}
+            title={tagline}
+          >
+            {tagline}
+          </span>
+        )}
       </div>
       <div
         className="flex items-baseline gap-3 sm:gap-[18px] v3-caption shrink-0"

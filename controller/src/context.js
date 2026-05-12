@@ -11,20 +11,28 @@ export function getTimeContext(date = new Date()) {
   if (h >= 14 && h < 17) return { period: 'afternoon', mood: 'focus', vibe: 'sustained energy', show: 'afternoon' };
   if (h >= 17 && h < 19) return { period: 'drive-time', mood: 'driving', vibe: 'drive home', show: 'drive-time' };
   if (h >= 19 && h < 22) return { period: 'evening', mood: 'evening', vibe: 'wind down', show: 'evening' };
-  if (h >= 22 || h < 1) return { period: 'late-evening', mood: 'night', vibe: 'late driving', show: 'late' };
+  if (h >= 22 || h < 1) return { period: 'late-evening', mood: 'night', vibe: 'late hours', show: 'late' };
   return { period: 'after-hours', mood: 'reflective', vibe: 'after hours', show: 'graveyard' };
 }
 
-// Festival calendar — extend as needed.
-// Real impl could use a Sikh/UK calendar API; this is good enough to start.
+// Festival calendar — general / cross-cultural defaults. Edit to taste; the
+// DJ leans into `mood` around these dates. Fixed-date only; lunar holidays
+// (Easter, Eid, Lunar New Year) shift year-to-year and would need a
+// per-year lookup.
 const FESTIVALS = [
-  { month: 1, day: 5, name: 'Guru Gobind Singh Jayanti', mood: 'spiritual' },
-  { month: 4, day: 13, name: 'Vaisakhi', mood: 'festival', windowDays: 2 },
-  { month: 4, day: 14, name: 'Vaisakhi', mood: 'festival' },
-  { month: 10, day: 31, name: 'Bandi Chhor Divas', mood: 'festival', windowDays: 2 },
+  { month: 1, day: 1, name: "New Year's Day", mood: 'celebratory' },
+  { month: 2, day: 14, name: "Valentine's Day", mood: 'romantic' },
+  { month: 3, day: 17, name: "St. Patrick's Day", mood: 'celebratory' },
+  { month: 4, day: 13, name: 'Vaisakhi', mood: 'festival', windowDays: 1 },
+  { month: 5, day: 1, name: 'May Day', mood: 'festival' },
+  { month: 6, day: 21, name: 'Summer Solstice', mood: 'celebratory' },
+  { month: 10, day: 31, name: 'Halloween', mood: 'festival' },
   { month: 11, day: 1, name: 'Diwali', mood: 'festival', windowDays: 3 },
-  { month: 12, day: 25, name: 'Christmas', mood: 'celebratory' },
-  { month: 12, day: 31, name: 'New Year\'s Eve', mood: 'celebratory' },
+  { month: 11, day: 5, name: 'Bonfire Night', mood: 'festival' },
+  { month: 12, day: 21, name: 'Winter Solstice', mood: 'reflective' },
+  { month: 12, day: 25, name: 'Christmas', mood: 'celebratory', windowDays: 1 },
+  { month: 12, day: 26, name: 'Boxing Day', mood: 'celebratory' },
+  { month: 12, day: 31, name: "New Year's Eve", mood: 'celebratory' },
 ];
 
 export function getFestivalContext(date = new Date()) {

@@ -7,7 +7,6 @@ import CenterStage from './CenterStage';
 import Waveform from './Waveform';
 import TransportBar from './TransportBar';
 import DotRail from './DotRail';
-import BroadcastTicker from './BroadcastTicker';
 import { Sheet } from './ui/sheet';
 import { Toaster } from './ui/toaster';
 import SettingsDialog from './SettingsDialog';
@@ -89,15 +88,12 @@ export default function PlayerApp({ contained = false }) {
       <TopBar
         tunedIn={tunedIn}
         context={context}
-        transmission={state.djLog?.length || 241}
         djName={dj?.name}
         listeners={listeners}
         onOpenSettings={() => setSettingsOpen(true)}
         tickerOn={tickerOn}
         onToggleTicker={toggleTicker}
       />
-
-      <BroadcastTicker items={state.djLog} enabled={tickerOn} />
 
       <CenterStage nowPlaying={nowPlaying} elapsed={elapsed} />
 
@@ -120,6 +116,8 @@ export default function PlayerApp({ contained = false }) {
         setVolume={setVolume}
         nowPlaying={nowPlaying}
         elapsed={elapsed}
+        djLog={state.djLog}
+        tickerOn={tickerOn}
       />
 
       <Sheet

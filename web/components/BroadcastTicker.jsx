@@ -49,6 +49,7 @@ function Row({ items, duration, direction, opacity, fontSize, paused }) {
       >
         {tripled.map((e, i) => {
           const isVoice = VOICE_KINDS.has(e.kind);
+          const reason = e.meta?.reason;
           return (
             <span
               key={`${e.id ?? "x"}-${i}`}
@@ -82,6 +83,20 @@ function Row({ items, duration, direction, opacity, fontSize, paused }) {
               >
                 {isVoice ? `“${e.message}”` : e.message}
               </span>
+              {reason && (
+                <>
+                  <span style={{ color: "var(--muted)", margin: "0 8px" }}>↳</span>
+                  <span
+                    style={{
+                      color: "var(--muted)",
+                      fontStyle: "italic",
+                      fontFamily: 'Georgia, "Times New Roman", serif',
+                    }}
+                  >
+                    {reason}
+                  </span>
+                </>
+              )}
             </span>
           );
         })}
@@ -107,17 +122,12 @@ export default function BroadcastTicker({ items, enabled }) {
 
   return (
     <div
-      className="absolute"
+      className="flex-1 min-w-0 relative"
       style={{
-        left: 0,
-        right: 0,
-        top: "66%",
-        transform: "translateY(-50%)",
-        zIndex: 1,
         maskImage:
-          "linear-gradient(to right, transparent 0, black 140px, black calc(100% - 140px), transparent 100%)",
+          "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
         WebkitMaskImage:
-          "linear-gradient(to right, transparent 0, black 140px, black calc(100% - 140px), transparent 100%)",
+          "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
       }}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
@@ -125,26 +135,10 @@ export default function BroadcastTicker({ items, enabled }) {
     >
       <Row
         items={feed}
-        duration={140}
+        duration={isMobile ? 220 : 320}
         direction="left"
-        opacity={0.18}
-        fontSize={isMobile ? 11 : 13}
-        paused={paused}
-      />
-      <Row
-        items={feed}
-        duration={360}
-        direction="right"
-        opacity={isMobile ? 0.22 : 0.3}
-        fontSize={isMobile ? 14 : 20}
-        paused={paused}
-      />
-      <Row
-        items={feed}
-        duration={160}
-        direction="left"
-        opacity={0.16}
-        fontSize={isMobile ? 11 : 13}
+        opacity={1}
+        fontSize={isMobile ? 12 : 14}
         paused={paused}
       />
     </div>
