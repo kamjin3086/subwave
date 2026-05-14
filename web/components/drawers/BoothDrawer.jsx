@@ -9,8 +9,14 @@ const FILTERS = [
 ];
 
 // Voice = anything the DJ actually speaks on-air.
-const VOICE_KINDS = new Set(['dj-speak', 'station-id', 'link', 'hourly-check', 'weather']);
+const VOICE_KINDS = new Set(['dj-speak', 'station-id', 'link', 'hourly-check', 'weather', 'news', 'traffic', 'random-facts']);
 const DJ_KINDS = new Set([...VOICE_KINDS, 'ai-pick', 'request', 'intent', 'playing', 'queued', 'miss']);
+
+// Operator-only diagnostics that aren't booth content. The `picker` line
+// ("pool 14 (similar=8 mood-library=4 …)") summarises the candidate set the
+// LLM saw — useful on /admin/debug, but the ai-pick that follows a few
+// seconds later already carries the listener-facing info (track + reason).
+const HIDDEN_KINDS = new Set(['picker']);
 
 function shortTime(t) {
   try {
@@ -40,8 +46,9 @@ export default function BoothDrawer({ items }) {
 
   const filtered = useMemo(() => {
     if (!items?.length) return [];
-    if (filter === 'all') return items;
-    return items.filter((e) => {
+    const visible = items.filter((e) => !HIDDEN_KINDS.has(e.kind));
+    if (filter === 'all') return visible;
+    return visible.filter((e) => {
       const isDj = DJ_KINDS.has(e.kind);
       return filter === 'dj' ? isDj : !isDj;
     });

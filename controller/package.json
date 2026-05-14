@@ -8,9 +8,12 @@
     "tag": "node src/tag-library.js"
   },
   "dependencies": {
+    "ai": "^6.0.182",
     "express": "^4.21.0",
     "node-cron": "^3.0.3",
+    "ollama-ai-provider-v2": "^3.5.1",
     "pino": "^9.5.0",
-    "pino-pretty": "^11.3.0"
+    "pino-pretty": "^11.3.0",
+    "zod": "^4.4.3"
   }
 }

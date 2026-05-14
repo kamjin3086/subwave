@@ -329,14 +329,17 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-const VOICE_KINDS = new Set(['dj-speak', 'link', 'station-id', 'hourly-check', 'weather']);
-const DEDUPE_KINDS = new Set(['station-id', 'hourly-check', 'weather']);
+const VOICE_KINDS = new Set(['dj-speak', 'link', 'station-id', 'hourly-check', 'weather', 'news', 'traffic', 'random-facts']);
+const DEDUPE_KINDS = new Set(['station-id', 'hourly-check', 'weather', 'news', 'traffic', 'random-facts']);
 const KIND_LABEL = {
   'dj-speak': 'intro',
   'link': 'link',
   'station-id': 'ident',
   'hourly-check': 'hourly',
   'weather': 'weather',
+  'news': 'news',
+  'traffic': 'traffic',
+  'random-facts': 'fact',
 };
 
 function formatAgo(ms) {

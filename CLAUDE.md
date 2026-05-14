@@ -22,8 +22,10 @@ docker compose -f docker/docker-compose.prod.yml up -d
 
 # Common one-offs
 docker compose -f docker/docker-compose.prod.yml logs -f controller
-curl -X POST http://localhost/api/skip   # manual skip via Caddy
+curl http://localhost:4800/api/health    # liveness via Caddy edge (prod)
 ```
+
+There is no `/skip` endpoint — track-end is the only natural transition. Liquidsoap controls pacing.
 
 **Controller source needs a rebuild, not a restart.** `controller` `COPY`s its source at build time, so `docker compose restart controller` reruns the *same baked-in code*. `liquidsoap` is different: `radio.liq` is bind-mounted (`../liquidsoap/radio.liq:/etc/liquidsoap/radio.liq:ro` in both compose files), so editing it only needs a restart — `Dockerfile.liquidsoap` itself doesn't `COPY` the script.
 
@@ -43,42 +45,73 @@ Four cooperating processes with **file-based IPC** through a shared `state/` dir
 
 - **Controller → Liquidsoap**:
   - `next.txt` — controller writes one annotated track URI; Liquidsoap polls every 1.0s, drains, and `request.queue.push`es it (`liquidsoap/radio.liq`).
-  - `say.txt` — controller writes a WAV path; Liquidsoap polls every 0.5s and feeds it through a voice queue that's `smooth_add`ed over music with sidechain ducking.
-  - `auto.m3u` — fallback playlist the controller rewrites every 10 minutes for the current mood; Liquidsoap reloads it on file change (`reload_mode="watch"`).
+  - `say.txt` — controller writes a WAV path; Liquidsoap polls every 0.5s and feeds it through `voice_queue`, which is **heavy-ducked** (`smooth_add p=0.25`) over the music bus. Used for station IDs, hourly time, weather, and listener-request intros.
+  - `intro.txt` — separate channel for between-track auto-DJ links. Liquidsoap polls every 0.5s and feeds it through `intro_queue`, which is **light-ducked** (`smooth_add p=0.40`) so the song that just started stays audible underneath the voice.
+  - `auto.m3u` — fallback playlist the controller rewrites every `AUTO_QUEUE_REFRESH_MINUTES` (default 60) for the current mood; Liquidsoap reloads it on file change (`reload_mode="watch"`).
+  - `liquidsoap_jingle_ratio.txt` / `liquidsoap_crossfade.txt` — tiny text files written by `settings.update()`. Read once at `radio.liq` startup; changes require a Liquidsoap restart (which the controller can trigger via `/restart-mixer` → telnet `shutdown`).
 - **Liquidsoap → Controller / UI**:
-  - `now-playing.json` — written from `music.on_metadata(on_meta)`. Hook is on `music` (not the final `radio` source) so metadata is fresh, before crossfade/rotate/fallback layers. `on_metadata` is used instead of `on_track` because `on_track` gets swallowed by crossfade transitions and source switches — see comment above the call in `radio.liq`.
-- **Controller → Web UI**: HTTP. Web polls `/now-playing` and `/state` every 5s (`web/app/page.js`).
-- **Browsers → Icecast**: direct `<audio src="…/stream.mp3">`.
+  - `now-playing.json` — written from `music_meta.on_metadata(on_meta)`. Hook is on `music_meta` — the **pre-cross** handle captured before `music` is wrapped in `cross(...)`. Hooking the post-cross source fires twice per transition because the custom `dj_transition` passes `initial_metadata=` into both `fade.in` and `fade.out`, freezing the UI one song behind. `on_metadata` is used instead of `on_track` because `on_track` gets swallowed by source switches (request queue → auto playlist).
+- **Controller → Web UI**: HTTP. The `useStationFeed` hook (`web/hooks/useStationFeed.js`) polls `/now-playing` and `/state` every 5s.
+- **Browsers → Icecast**: direct `<audio src="…/stream.mp3">`. The `useMediaSession` hook wires lock-screen / headphone / CarPlay controls to the player, with artwork served from the controller's `/cover/:id` proxy.
 
 Anything that needs to flow between the controller and Liquidsoap must go through one of these files — there is no socket or RPC channel.
 
 ### Controller (`controller/src/`, ESM Node.js)
 
-- `server.js` — Express API: `GET /now-playing`, `GET /state`, `POST /request`, `POST /skip`, `GET /health`. CORS is wide open by design (`*`).
-- `queue.js` — in-memory `upcoming`/`history`/`djLog` + `serveNext()` which is the one place that actually writes `next.txt`/`say.txt`. **All track playback goes through `queue.push()` or `queue.announce()`.** TTS is generated and `say.txt` is written *before* the track URI, with a 200 ms gap so Liquidsoap picks up the voice file first.
+- `server.js` — Express API. Public: `GET /health`, `/now-playing`, `/state`, `/dj`, `/cover/:id`, and `POST /request`. Admin-gated (Basic auth via `ADMIN_USER` + `ADMIN_PASS`): `GET /POST /settings`, `POST /restart-mixer`, `GET /POST /DELETE /jingles[/:filename]`, `POST /auto-pick`, `POST /tag-library`, `GET /debug`. CORS is wide open (`*`). **In production (`NODE_ENV=production`, set by `docker-compose.prod.yml`) the gate is mandatory** — the controller exits on startup if `ADMIN_USER`/`ADMIN_PASS` aren't set, because the admin surface is too revealing to expose unauthenticated.
+- `queue.js` — in-memory `upcoming`/`history`/`djLog` plus `drainToLiquidsoap()`, the single writer of `next.txt` (and, via `tts.speak`, `say.txt` for request intros). `announce()` is the single writer of `say.txt` / `intro.txt` for scheduled segments — it picks the target file based on kind (`'link'` → `intro.txt`, everything else → `say.txt`). **All track playback goes through `queue.push()`; all spoken segments go through `queue.announce()`.** Request-intro TTS is written ~250 ms before the track URI so Liquidsoap picks up the voice file first.
 - `ollama.js` — two distinct LLM modes against the same model:
-  1. `matchRequest` uses `format: 'json'` with a strict schema (`search_terms`, `mood`, `intent`, `ack`) at low temperature.
-  2. `generate*` (intro, weather, station ID, hourly) is free-text under a DJ persona system prompt ("BBC 6 Music" tone). Hard rules in that prompt — don't loosen them without reason.
-- `subsonic.js` — Navidrome client using proper Subsonic salt+token MD5 auth (never plaintext). `getAnnotatedUri(song)` wraps the URI in `annotate:title="…",artist="…",…:<uri>` so Liquidsoap reports real metadata immediately instead of waiting on stream ID3. If `MUSIC_LIBRARY_PATH` env is set, `getPlayableUri` returns a local file path; otherwise the Subsonic stream URL.
-- `context.js` — `getFullContext()` returns `{ time, weather, festival, dominantMood }`. **Priority for `dominantMood` is festival > weather > time** — this is what `refreshAutoPlaylist` keys off. Open-Meteo is cached 30 min; festivals are a hardcoded list keyed to the operator's calendar.
-- `scheduler.js` — node-cron driver: auto-playlist refresh every `config.show.autoQueueRefreshMinutes`, hourly time check, weather check every 30 min (only announces on condition change), station IDs at `:15`/`:45`, voice-WAV cleanup hourly.
-- `piper.js` — spawns Piper CLI, writes WAV to `config.piper.outDir`, returns the path. Cleans files older than 1 h.
+  1. `matchRequest` uses `format: 'json'` with a strict schema (`search_terms`, `mood`, `intent`, `ack`, plus `artist`/`scope`/`sort` for "latest album by X" queries) at low temperature.
+  2. `generate*` (intro, link, weather, station ID, hourly) is free-text under a DJ persona system prompt. Each call picks a **random soul** from the configured `settings.dj.souls` array (1–10 short personas) plus a random narrative **angle**, on top of an opener-anti-repeat list assembled from `queue.getRecentOpeners()`. Hard rules in the prompt template — don't loosen them without reason.
+- `picker.js` — LLM-as-DJ next-track selector. Builds a balanced candidate pool from 7 sources (similar-songs from current, mood-tagged library, mood-matched Navidrome playlists, recently-added albums, frequent albums, similar-artist top songs, starred+random fallback), caps each source, dedupes, and hands ≤18 candidates + the last 8 plays to Ollama with `format: 'json'`. Expensive Subsonic calls are memoised for 30 min so the per-pick load stays in single digits. If the LLM is down or returns an unknown id, the controller logs and gives up — Liquidsoap falls back to `auto.m3u`.
+- `subsonic.js` — Navidrome client using proper Subsonic salt+token MD5 auth (never plaintext). `getAnnotatedUri(song)` wraps the URI in `annotate:title="…",artist="…",subsonic_id="…":<uri>` so Liquidsoap reports real metadata immediately instead of waiting on stream ID3, and so the `on_metadata` hook can recover the song id for the cover-art proxy. Also exposes `getSimilarSongs`, `getArtistInfo`, `getTopSongs`, `getPlaylists`/`getPlaylist`, `getRecentlyAddedAlbums`, `getFrequentAlbums`, and `getCoverArtUrl` — all used by the picker and `/cover/:id`.
+- `settings.js` — durable settings stored at `/var/sub-wave/settings.json`. Validates+persists; on save it also writes the tiny `liquidsoap_*.txt` files Liquidsoap reads on startup. `renderDjPrompt({name, soul, …})` substitutes `{name}/{soul}/{station}/{location}` into the operator-supplied template; the legacy single-string `dj.soul` is migrated forward into `dj.souls[]` on load. **`{name}` is mandatory in the template** — `update()` refuses any custom prompt that drops it, so dialogue can never become anonymous.
+- `tts.js` — engine dispatcher. Per-kind override (`settings.tts.byKind`) falls through to `settings.tts.defaultEngine` (default `piper`). On any failure, automatically retries on the other engine so the DJ never goes silent. All callers (queue.js, jingles.js, scheduler.js) go through `tts.speak()` — don't import `piper.js` or `kokoro.js` directly.
+- `piper.js` — spawns Piper CLI, writes WAV to `config.piper.outDir`, returns the path. Cleans files older than 1 h. Fast path (~30 ms/word).
+- `kokoro.js` — manages a persistent Python worker (`controller/scripts/kokoro_worker.py`) that loads the kokoro-onnx model once and stays resident. Slower than Piper (~300–800 ms/line on CPU) but much more natural. `isAvailable()` lets `tts.speak` short-circuit the fallback chain if the venv/model isn't present.
+- `context.js` — `getFullContext()` returns `{ time, weather, festival, dominantMood }`. **Priority for `dominantMood` is festival > weather > time** — this is what `refreshAutoPlaylist` and the picker key off. `getDateContext` / `getClockContext` expose day/season/weekend/late-night/commute flags to the DJ prompts. Open-Meteo is cached 30 min; festivals are a hardcoded list keyed to the operator's calendar.
+- `scheduler.js` — node-cron driver. Auto-playlist refresh every `config.show.autoQueueRefreshMinutes` (default 60). Cron ticks fire at the most aggressive cadence (top of hour, every 15 min, `:00/:15/:30/:45`); `shouldFire(kind)` gates each handler on `settings.dj.frequency` (`quiet` / `moderate` / `aggressive`) so quiet stations get the time check every 2 hours and only a `:45` station ID, while aggressive ones get all four idents and a weather update every 15 min. Weather only announces on condition change.
+- `liquidsoap-control.js` — opens a telnet socket to Liquidsoap on port 1234 and issues the custom `restart` server command, which calls `shutdown()` and lets the container's restart policy bring it back ~3 s later with the new `liquidsoap_*.txt` values applied.
+- `library.js` / `tag-library.js` — `moods.json` store + standalone tagger (`npm run tag [-- --limit N]`). Resumable, saves every 25 tags.
+- `jingles.js` — pre-rendered TTS stinger management. Writes WAVs into `${STATE_DIR}/jingles/`, rewrites `jingles.m3u`, and updates `jingles.json` (metadata). The `default-id` ident is protected from deletion.
 - `config.js` — single source of truth for env-derived config. Default URLs point at Tailscale hostnames (`ronin.tail.ts.net`, `x1pro.tail.ts.net`).
 
 ### Liquidsoap (`liquidsoap/radio.liq`)
 
-Pipeline: `dj_queue` (controller-fed) **fallback→** `auto_playlist` → `crossfade(smart, 4s)` → `smooth_add` voice over music → `rotate` jingles 1-in-30 → `fallback` to `emergency.mp3` → `blank.skip(5s)` → `normalize(-14 LUFS)` → `output.icecast` + `output.file` archive. The two `output.*` calls broadcast and write hourly archive files at `/var/sub-wave/archive/%Y-%m-%d/%H-00.mp3`.
+Pipeline (in order):
+
+1. `dj_queue` (controller-fed `request.queue`) **fallback→** `auto_playlist` (`playlist(reload_mode="watch")`) → `music`.
+2. **`music_meta` is captured here**, before the cross. This is what `on_metadata(on_meta)` hooks; hooking the post-cross source fires twice per transition.
+3. `cross(duration=crossfade_duration, dj_transition, music)` — low-level `cross` operator (not the high-level `crossfade` wrapper, which silently routes through `simple_transition` and ignores custom callbacks). `dj_transition` builds `fade.out(d, …)` + `fade.in(d, …)` that span the **full** cross buffer, so the two tracks curve past each other at ~−6 dB midpoint and sum to ~unity. Earlier per-transition energy scaling caused audible doubling — don't reintroduce it; vary the cross buffer length instead.
+4. Optional **studio bed** — `state/bed.mp3` mixed in at weight `0.02` (~34 dB below music) before voice ducking, so `smooth_add` ducks the bed along with the music when the DJ talks.
+5. **Two stacked `smooth_add` ducking layers** — `voice_queue` (heavy, p=0.25) then `intro_queue` (light, p=0.40). Gated talkbax-style, not RMS-keyed: an earlier RMS sidechain follower drove `music_bus` to −91 dB even with the voice queue empty (see git log `f38a9af`). Both voice channels pass through the same `mic_chain` (compress → makeup gain → 40 ms slap echo). HPF and presence shelf are skipped — this Liquidsoap build hits "Early computation of source content-type" on IIR filters fed by `request.queue`.
+6. `rotate(weights=[1, jingle_ratio], [jingles, radio])` — one jingle per N music tracks, configurable.
+7. `fallback(track_sensitive=false, [radio, emergency])` → `blank.skip(max_blank=5s)`.
+8. **Broadcast bus glue** — `normalize(target=-14.0)` → `stereo.width(0.2)` → bus compressor (ratio 2:1, gentle glue) → brick-wall limiter (ratio 20:1 at −1 dBFS).
+9. `output.icecast(%mp3(bitrate=192))` to `icecast:7702/stream.mp3` + `output.file(%mp3(bitrate=128), reopen_when={0m0s}, "/var/sub-wave/archive/%Y-%m-%d/%H-00.mp3")` for hourly archives.
+
+Also: a custom `subhttp:` protocol shells out to `curl` (installed in `Dockerfile.liquidsoap`) because Liquidsoap's built-in `http.get.stream` returns spurious 522s on the Cloudflare-fronted Navidrome origin. A telnet server on port 1234 (internal-only) exposes a custom `restart` command for the controller.
 
 ### Web UI (`web/`)
 
-Next.js 15 App Router. `app/page.js` is the only page; components in `web/components/`. Tailwind. Polls the controller every 5s. Stream URL and API base are public env (`NEXT_PUBLIC_STREAM_URL`, `NEXT_PUBLIC_API_URL`) — both must point at a host reachable from listener browsers (Tailscale hostnames by default).
+Next.js 15 App Router with Tailwind. Routes:
+
+- `/` — `PlayerApp` or `Landing`, chosen at request time by `SUBWAVE_HOMEPAGE` (`player` default, `landing` for the marketing host).
+- `/listen` — always the player.
+- `/landing` — always the broadsheet.
+- `/setup` — interactive onboarding walkthrough.
+- `/admin`, `/admin/settings`, `/admin/debug` — admin shell. **Single sign-in gate** (`AdminShell` + `useAdminAuth` in `web/lib/adminAuth.js`) replaces the old in-player Settings modal and the standalone `/debug` route. Credentials are cached in `localStorage` as `base64(user:pass)` and dropped on sign-out.
+
+PWA-installable: `app/manifest.js`, `app/icon.js` + `apple-icon.js`, `app/icons/[size]/route.js` for Android adaptive sizes, `app/screenshots/[variant]/route.js` for install-dialog previews (rendered via `next/og` ImageResponse — beware Satori's constraints: only flex/block/none/-webkit-box `display` values, divs with multiple children need an explicit `display: flex`). `web/public/sw.js` is a minimal service worker (just enough to avoid a /sw.js 404 on install). `useMediaSession` wires the OS lock-screen / headphone / car-display controls; **skip is intentionally omitted** on the listener side so a stray AirPods double-tap doesn't skip the song for every listener.
+
+Polling: `useStationFeed` hits `/now-playing` + `/state` every 5s. Stream URL and API base default to same-origin (`/api`, `/stream.mp3`) for the production image; dev overrides via `web/.env.local` (`NEXT_PUBLIC_API_URL=http://localhost:7701`, `NEXT_PUBLIC_STREAM_URL=http://localhost:7702/stream.mp3`).
 
 ### Docker layout
 
 Two compose files, two deployment shapes:
 
 - **`docker/docker-compose.yml`** — "Mac local smoke-test variant". Icecast + Liquidsoap + Controller only. Web UI runs separately via `npm run dev`. State is `../state` (repo-local bind mount). Used for local development.
-- **`docker/docker-compose.prod.yml`** — production single-host deploy. Adds `web` (built from `web/Dockerfile`, Next.js standalone output) and `caddy` (edge router). **Only Caddy binds a host port (`:80`)** — Icecast, Controller, Liquidsoap, and Web are internal-only and reachable via the proxy. State path is `${STATE_DIR:-/var/lib/subwave}`. Cloudflare is expected to terminate TLS in front; Caddy has `auto_https off`.
+- **`docker/docker-compose.prod.yml`** — production single-host deploy. Adds `web` (built from `web/Dockerfile`, Next.js standalone output) and `caddy` (edge router). **Only Caddy binds a host port (`4800:80`)** — Icecast, Controller, Liquidsoap, and Web are internal-only and reachable via the proxy. State path is `${STATE_DIR:-/var/lib/subwave}`. Cloudflare is expected to terminate TLS in front; Caddy has `auto_https off`. The `controller` service is forced into `NODE_ENV=production`, which makes the admin auth gate mandatory — the container will exit on boot if `ADMIN_USER`/`ADMIN_PASS` aren't in `controller/.env`.
 
 The shared `/var/sub-wave` mount in **both** the Liquidsoap and Controller containers is what makes the file-based IPC work — they must always be mounted to the same host path.
 
@@ -87,19 +120,23 @@ The shared `/var/sub-wave` mount in **both** the Liquidsoap and Controller conta
 One origin, three backends:
 
 - `/stream.mp3` → `icecast:7702` with `flush_interval -1` so the audio stream isn't buffered.
-- `/api/*` → `controller:7701`, prefix stripped via `handle_path` so the controller keeps its existing routes (`/now-playing`, `/state`, `/request`, `/skip`, `/health`).
+- `/api/*` → `controller:7701`, prefix stripped via `handle_path` so the controller keeps its existing routes (`/now-playing`, `/state`, `/request`, `/dj`, `/cover/:id`, `/health`, plus admin endpoints).
 - everything else → `web:7700`.
 
-The web app uses same-origin defaults (`/api`, `/stream.mp3`) in `web/app/page.js`, so the production image needs no `NEXT_PUBLIC_*` env vars. For dev (separate ports), override via `web/.env.local`.
+The web app uses same-origin defaults (`/api`, `/stream.mp3`), so the production image needs no `NEXT_PUBLIC_*` env vars. For dev (separate ports), override via `web/.env.local`.
 
 ### Jingles
 
-`state/jingles.m3u` is empty by default. Run `scripts/generate-jingles.sh` after the stack is up — it `docker compose exec`s into the controller container and pipes text through Piper, writing WAVs into `${STATE_DIR}/jingles/` and rewriting the M3U. Liquidsoap's jingles `playlist(...)` uses `reload_mode="watch"`, so new renders are picked up without a restart.
+`state/jingles.m3u` is empty by default. Run `scripts/generate-jingles.sh` after the stack is up — it `docker compose exec`s into the controller container and pipes text through the configured TTS engine (Piper or Kokoro, whichever is bound to the `jingle` kind in settings), writing WAVs into `${STATE_DIR}/jingles/` and rewriting the M3U. Liquidsoap's jingles `playlist(...)` uses `reload_mode="watch"`, so new renders are picked up without a restart.
 
 ## Working on this codebase
 
-- Touching the queue/playback path: keep the invariant that `queue.serveNext()` is the single writer of `next.txt`/`say.txt`, and that voice file is written ~200 ms before the track URI. Liquidsoap's polling intervals (1.0s for queue, 0.5s for voice) are the upper bound on perceived latency.
-- Touching `radio.liq`: the `on_metadata` hook must stay attached to the `music` source, not to a downstream stage — moving it loses metadata fidelity. Don't switch it to `on_track` either; `on_track` gets swallowed by crossfades and source switches, which is exactly why the codebase uses `on_metadata`.
-- Touching Subsonic: keep using `getAnnotatedUri` for anything going to Liquidsoap. Raw stream URLs work but lose metadata until ID3 arrives.
-- LLM responses are not retried; `matchRequest` does best-effort `{…}` recovery via regex if JSON parsing fails. Don't add aggressive retry without considering that Ollama on a homelab box may be slow but is reliable.
+- Touching the queue/playback path: `queue.drainToLiquidsoap()` is the single writer of `next.txt` (and the request-intro `say.txt`); `queue.announce()` is the single writer of scheduled `say.txt` / `intro.txt`. Request-intro WAVs are written ~250 ms before the track URI so Liquidsoap's 0.5s voice poll picks them up first. Liquidsoap's polling intervals (1.0s for queue, 0.5s for both voice channels) are the upper bound on perceived latency.
+- Touching `radio.liq`: the `on_metadata` hook must stay attached to `music_meta` — the **pre-cross** handle. Hooking the post-cross `music` fires twice per transition because `dj_transition` passes `initial_metadata=` into both `fade.in` and `fade.out`. Don't switch to `on_track` either; `on_track` gets swallowed by source switches.
+- Touching the crossfade: keep the fade duration equal to the cross buffer (`d = crossfade_duration()` and `fade.out(duration=d, …)` / `fade.in(duration=d, …)`). Shorter fades inside a fixed-width buffer let the outgoing track play at full volume while the incoming is ramping, summing to +6 dB and producing an audible doubling. Vary the cross buffer length (e.g. via `override_duration`) instead.
+- Touching ducking: stick with `smooth_add`. An RMS sidechain follower drove `music_bus` to silence (`f38a9af` in git log). `smooth_add` is gated talkbax — it doesn't care how loud the voice is, only whether the channel has signal, which is exactly what a broadcast desk's talk button emulates.
+- Touching TTS: callers go through `tts.speak(text, { kind })` — not `piper.speak` / `kokoro.speak` directly. `tts.js` handles the per-kind engine override and the automatic fallback to the other engine on failure.
+- Touching Subsonic: keep using `getAnnotatedUri` for anything going to Liquidsoap. Raw stream URLs work but lose metadata until ID3 arrives, and the `on_metadata` hook needs `subsonic_id` so the controller's `/cover/:id` proxy can serve MediaSession artwork.
+- LLM responses are not retried; `matchRequest` does best-effort `{…}` recovery via regex if JSON parsing fails. The picker logs the raw response (first 200 chars) on parse failures so the next "picker LLM failed:" line is actionable. Don't add aggressive retry without considering that Ollama on a homelab box may be slow but is reliable.
+- DJ persona: the configured `settings.dj.souls` is an **array** (1–10 entries). `ollama.djSystem()` picks one at random per call. Legacy single-string `dj.soul` is migrated on load. Adding entries broadens the rotation; emptying the array falls back to the seeded defaults in `DJ_SOULS`.
 - Festivals in `context.js` are a hand-curated general calendar (Western/UK plus a couple of cross-cultural markers like Diwali and Vaisakhi). Fixed-date only — lunar-shifted holidays (Easter, Eid, Lunar New Year) aren't representable in the current schema. Adding/removing entries changes what the autonomous DJ plays around those dates.

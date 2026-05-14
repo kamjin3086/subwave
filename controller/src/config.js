@@ -43,13 +43,14 @@ export const config = {
     lng: -2.1288,
     locationName: 'Wolverhampton',
   },
+  news: {
+    feedUrl: process.env.NEWS_FEED_URL || 'http://feeds.bbci.co.uk/news/rss.xml',
+    maxItems: parseInt(process.env.NEWS_MAX_ITEMS || '10', 10),
+  },
   server: {
     port: parseInt(process.env.PORT || '7701', 10),
   },
   show: {
-    // Define show clocks — what % of slots are music vs jingles vs DJ talk
     autoQueueRefreshMinutes: parseInt(process.env.AUTO_QUEUE_REFRESH_MINUTES || '60', 10),
-    djSegmentEveryMinutes: 20,
-    weatherUpdateEveryMinutes: 60,
   },
 };

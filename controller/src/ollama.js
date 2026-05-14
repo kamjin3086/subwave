@@ -9,7 +9,7 @@ import * as settings from './settings.js';
 // The rotation pool is exactly the souls list in Settings — edit it there to
 // add, remove, or pin a single persona. If the list is somehow empty, falls
 // back to the built-in defaults so a generation never crashes.
-function djSystem() {
+export function djSystem() {
   const s = settings.get();
   const pool = (Array.isArray(s.dj?.souls) && s.dj.souls.length > 0)
     ? s.dj.souls
@@ -25,7 +25,7 @@ function djSystem() {
 // the user prompt as "Tone for this segment:" so consecutive generations
 // don't fall back to the same shape. Add freely — the more variety here,
 // the less the DJ repeats itself.
-const ANGLES = {
+export const ANGLES = {
   intro: [
     'Open with one specific image from right now (weather, time, day, season) and slide into the track.',
     'Mention the artist in passing — one detail (era, scene, mood) — not a full title-and-artist back-announce.',
@@ -65,21 +65,42 @@ const ANGLES = {
     'Just one short sentence that happens to mention the time.',
     'Acknowledge what kind of listener might be tuning in at this exact hour, without naming them.',
   ],
+  news: [
+    'Read it like a half-distracted DJ skimming the wire, not a news anchor.',
+    'Land one specific image or phrase from the headline, skip the editorial.',
+    'Treat it as something you just noticed on a second screen, then slide back to music.',
+    'Keep it one sentence. The next sentence is the song.',
+    'Acknowledge the world outside the room without dwelling on it.',
+  ],
+  traffic: [
+    'Tongue-in-cheek traffic for a station that has none — invent a SUB/WAVE-shaped obstacle (a cat on the cable, slow buffering on the M6, a queue at the kettle).',
+    'Mock the format of a real traffic report. Keep it a single sentence.',
+    'Make the "delay" tiny and domestic, not a real road incident.',
+    'Treat traffic as a metaphor for the listening room itself.',
+    'Land one absurd detail, then ease into the next track.',
+  ],
+  random_facts: [
+    'One small "did you know" — concrete, oddly specific, no Wikipedia rote.',
+    'Frame the fact like something you half-remember telling a friend at 1am.',
+    'Tie the fact to the time of day or season if it lands naturally; otherwise drop it cold.',
+    'Keep it one sentence. Avoid the words "interestingly" and "fun fact".',
+    'A fact that earns the next song, not one that competes with it.',
+  ],
 };
 
-function pickAngle(kind) {
+export function pickAngle(kind) {
   const list = ANGLES[kind];
   if (!list || list.length === 0) return null;
   return list[Math.floor(Math.random() * list.length)];
 }
 
-function randomSeed() {
+export function randomSeed() {
   return Math.floor(Math.random() * 1_000_000_000);
 }
 
 // Build the shared "right now" context block fed to every generate* call.
 // Pulled out so all five DJ functions show the model the same picture.
-function buildContextLines(context, { recentTracks } = {}) {
+export function buildContextLines(context, { recentTracks } = {}) {
   const lines = [];
   if (context?.date) {
     lines.push(`Day: ${context.date.dayLabel}, ${context.date.dayOfMonth} ${context.date.monthLabel} (${context.date.season})`);
@@ -104,7 +125,7 @@ function buildContextLines(context, { recentTracks } = {}) {
 }
 
 // Append rotating angle + recap + opener blocklist to the user prompt.
-function decoratePrompt(prompt, { kind, recap, recentOpeners }) {
+export function decoratePrompt(prompt, { kind, recap, recentOpeners }) {
   const out = [prompt];
   const angle = pickAngle(kind);
   if (angle) out.push(`\nTone for this segment: ${angle}`);
@@ -118,7 +139,7 @@ function decoratePrompt(prompt, { kind, recap, recentOpeners }) {
 
 // Ring buffer of recent LLM calls for the /debug endpoint
 export const recentCalls = [];
-function record(call) {
+export function record(call) {
   recentCalls.unshift(call);
   if (recentCalls.length > 30) recentCalls.length = 30;
 }

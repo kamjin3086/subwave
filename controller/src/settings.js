@@ -42,7 +42,7 @@ const FREQUENCIES = ['quiet', 'moderate', 'aggressive'];
 // per kind keeps the UI honest: changing the default applies live to any
 // kind the operator hasn't explicitly overridden.
 export const TTS_ENGINES = ['piper', 'kokoro'];
-export const TTS_KINDS   = ['dj-speak', 'link', 'station-id', 'hourly-check', 'weather', 'jingle'];
+export const TTS_KINDS   = ['dj-speak', 'link', 'station-id', 'hourly-check', 'weather', 'news', 'traffic', 'random-facts', 'jingle'];
 
 // British English Kokoro voices — the ones that fit a BBC 6 Music tone. The
 // underlying model ships 54 voices total (American, Spanish, Hindi, Japanese,

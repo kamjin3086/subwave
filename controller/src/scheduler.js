@@ -1,8 +1,8 @@
 // Scheduler — drives autonomous behaviour:
 //   - refreshes the auto-playlist file Liquidsoap falls back to
-//   - schedules DJ talk segments between tracks
-//   - hourly time/weather checks
-//   - station IDs
+//   - hourly time check (top of every hour, in character)
+//   - station IDs (every ~45 min, varied by frequency setting)
+//   - skill registry tick (weather, news, traffic, random facts) every 5 min
 
 import cron from 'node-cron';
 import { writeFile } from 'node:fs/promises';
@@ -13,29 +13,8 @@ import * as library from './library.js';
 import { getFullContext } from './context.js';
 import { queue } from './queue.js';
 import { cleanupOldVoices } from './tts.js';
-import * as settings from './settings.js';
-
-// Gate scheduled DJ events on the current talk frequency. Crons are scheduled
-// at the most aggressive cadence; this decides whether a given tick fires.
-function shouldFire(kind, now = new Date()) {
-  const f = settings.get().dj?.frequency || 'moderate';
-  const m = now.getMinutes();
-  if (kind === 'stationId') {
-    if (f === 'quiet')    return m === 45;
-    if (f === 'moderate') return m === 15 || m === 45;
-    return [0, 15, 30, 45].includes(m);
-  }
-  if (kind === 'hourly') {
-    if (f === 'quiet') return now.getHours() % 2 === 0;
-    return true;
-  }
-  if (kind === 'weather') {
-    if (f === 'quiet')    return m === 0;
-    if (f === 'moderate') return m === 0 || m === 30;
-    return true;
-  }
-  return true;
-}
+import { shouldFire } from './dj-gate.js';
+import * as skillRegistry from './skills/_registry.js';
 
 const TARGET_POOL = 30;
 const MOOD_WEIGHT = 12;          // up to this many mood-tagged tracks per pool
@@ -172,28 +151,18 @@ async function hourlyCheck() {
 }
 
 // ---------------------------------------------------------------------------
-// WEATHER UPDATE
-// Less frequent than hourly — only when significant changes
+// SKILLS TICK
+// Walks the controller/src/skills/ registry. The registry handles per-skill
+// cooldowns, the frequency-setting gate, and picks at most one skill to fire
+// per tick. Weather lives here now (was scheduler.maybeWeatherUpdate).
 // ---------------------------------------------------------------------------
 
-let lastWeatherCondition = null;
-
-async function maybeWeatherUpdate() {
-  if (!shouldFire('weather')) return;
-  const ctx = await getFullContext();
-  if (!ctx.weather.condition || ctx.weather.condition === 'unknown') return;
-  if (ctx.weather.condition === lastWeatherCondition) return;
-
-  lastWeatherCondition = ctx.weather.condition;
+async function skillsTick() {
   try {
-    const script = await ollama.generateWeatherSegment(ctx.weather, ctx.time, {
-      recap: queue.getDjRecap(),
-      context: ctx,
-      recentOpeners: queue.getRecentOpeners(),
-    });
-    await queue.announce(script, 'weather');
+    const ctx = await getFullContext();
+    await skillRegistry.tick(ctx);
   } catch (err) {
-    queue.log('error', `Weather update failed: ${err.message}`);
+    queue.log('error', `Skills tick failed: ${err.message}`);
   }
 }
 
@@ -243,8 +212,9 @@ export function startScheduler() {
   // Top of every hour
   cron.schedule('0 * * * *', hourlyCheck);
 
-  // Weather check every 15 minutes — handler gates further on frequency
-  cron.schedule('*/15 * * * *', maybeWeatherUpdate);
+  // Skills tick every 5 minutes — registry handles per-skill cooldowns
+  // and the frequency-setting gate.
+  cron.schedule('*/5 * * * *', skillsTick);
 
   // Station ID candidate ticks at :00, :15, :30, :45 — handler gates by frequency
   cron.schedule('0,15,30,45 * * * *', stationId);
@@ -252,5 +222,5 @@ export function startScheduler() {
   // Cleanup every hour
   cron.schedule('0 * * * *', cleanup);
 
-  queue.log('scheduler', 'Scheduler started');
+  queue.log('scheduler', `Scheduler started · skills: ${skillRegistry.listSkills().join(', ')}`);
 }

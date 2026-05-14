@@ -18,6 +18,9 @@ const TTS_KIND_LABEL = {
   'station-id':   'Station IDs',
   'hourly-check': 'Hourly check-ins',
   'weather':      'Weather updates',
+  'news':         'News headlines',
+  'traffic':     'Traffic filler',
+  'random-facts': 'Random facts',
   'jingle':       'Jingle rendering',
 };
 const TTS_KIND_HINT = {
@@ -26,6 +29,9 @@ const TTS_KIND_HINT = {
   'station-id':   'Identification at :15 and :45 (frequency-dependent).',
   'hourly-check': 'Top-of-hour time/weather mention.',
   'weather':      'Fired when conditions change since the last announcement.',
+  'news':         'One headline from the configured RSS feed, read in DJ tone.',
+  'traffic':      'Tongue-in-cheek made-up traffic — only during commute hours.',
+  'random-facts': 'A one-liner "did you know" between tracks.',
   'jingle':       'Engine used when you create a new jingle from text in the Jingles section.',
 };
 

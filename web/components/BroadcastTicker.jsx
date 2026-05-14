@@ -20,11 +20,35 @@ const VOICE_KINDS = new Set([
   "link",
   "hourly-check",
   "weather",
+  "news",
+  "traffic",
+  "random-facts",
 ]);
 
-// Transcript = what was said + which tracks aired. Operational events
-// (request/queued/picker/miss/scheduler/error) are filtered out.
-const TRANSCRIPT_KINDS = new Set([...VOICE_KINDS, "playing"]);
+// AI-reasoning kinds: not spoken on-air, but they're the DJ's "thinking" —
+// surface them inline so listeners can see why a track was picked and how a
+// request was parsed. ai-pick.meta.reason is the LLM's stated justification;
+// intent.message already encodes the parsed intent (`"text" → intent`).
+const AI_KINDS = new Set(["ai-pick", "intent", "miss"]);
+
+// Transcript = what was said + which tracks aired + the AI's reasoning around
+// each pick. Operational chatter (queued/picker pool stats/scheduler/error)
+// stays filtered out.
+const TRANSCRIPT_KINDS = new Set([...VOICE_KINDS, ...AI_KINDS, "playing"]);
+
+function aiText(e) {
+  if (e.kind === "ai-pick") {
+    const reason = e.meta?.reason?.trim();
+    const source = e.meta?.source;
+    const head = `Picked ${e.message}`;
+    if (reason) return `${head} — ${reason}`;
+    if (source) return `${head} · via ${source}`;
+    return head;
+  }
+  if (e.kind === "intent") return `Heard ${e.message}`;
+  if (e.kind === "miss") return e.message;
+  return e.message;
+}
 
 function Row({ items, duration, direction, opacity, fontSize, paused }) {
   // Tripled so the keyframe can shift one full copy and seamlessly loop.
@@ -33,7 +57,7 @@ function Row({ items, duration, direction, opacity, fontSize, paused }) {
   return (
     <div className="overflow-hidden" style={{ height: fontSize + 10, opacity }}>
       <div
-        className="flex items-center whitespace-nowrap"
+        className="flex items-center whitespace-nowrap font-mono"
         style={{
           animation: `v3-ticker-${direction} ${duration}s linear infinite`,
           animationPlayState: paused ? "paused" : "running",
@@ -41,32 +65,23 @@ function Row({ items, duration, direction, opacity, fontSize, paused }) {
           fontSize,
           lineHeight: 1,
           width: "max-content",
+          color: "var(--muted)",
+          fontStyle: "normal",
         }}
       >
         {tripled.map((e, i) => {
           const isVoice = VOICE_KINDS.has(e.kind);
+          const isAi = AI_KINDS.has(e.kind);
+          const marker = isVoice ? "♪" : isAi ? "◇" : "▶";
+          const text = isVoice ? `"${e.message}"` : isAi ? aiText(e) : e.message;
           return (
             <span
               key={`${e.id ?? "x"}-${i}`}
               className="inline-flex items-baseline"
               style={{ padding: "0 28px" }}
             >
-              {isVoice ? (
-                <span
-                  style={{
-                    color: "var(--accent)",
-                    fontStyle: "italic",
-                    fontFamily: 'Georgia, "Times New Roman", serif',
-                  }}
-                >
-                  “{e.message}”
-                </span>
-              ) : (
-                <>
-                  <span style={{ color: "var(--muted)", marginRight: 8 }}>▶</span>
-                  <span style={{ color: "var(--muted)" }}>{e.message}</span>
-                </>
-              )}
+              <span style={{ marginRight: 8 }}>{marker}</span>
+              <span>{text}</span>
             </span>
           );
         })}
