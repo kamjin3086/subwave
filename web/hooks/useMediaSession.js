@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+
 // Wires the browser's Media Session API to the controller's now-playing feed.
 // Effect: track + artist + album show on the OS lock screen, in the
 // notification shade (Android), in Control Centre (iOS / macOS), and on
@@ -31,9 +33,12 @@ export function useMediaSession({ tunedIn, nowPlaying, audioRef, onTune, onSkip 
     navigator.mediaSession.playbackState = tunedIn ? 'playing' : 'paused';
   }, [tunedIn]);
 
-  // Push current track metadata. Artwork falls back to the app icon at three
-  // sizes so the OS can pick whichever fits its surface (notification, lock
-  // screen, Bluetooth display).
+  // Push current track metadata. When the controller has a Subsonic id for
+  // the current track, route artwork through /api/cover/:id so the lock
+  // screen / CarPlay / Bluetooth display shows the actual album art. The
+  // controller proxies the bytes from Subsonic so credentials never leak
+  // into the page. Falls back to the app icon when no id is available
+  // (jingles, station idents, scanning state).
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     if (!('MediaMetadata' in window)) return;
@@ -41,17 +46,32 @@ export function useMediaSession({ tunedIn, nowPlaying, audioRef, onTune, onSkip 
     const title = nowPlaying?.title || 'SUB/WAVE';
     const artist = nowPlaying?.artist || 'Live broadcast';
     const album = nowPlaying?.album || 'SUB/WAVE';
+    const subsonicId = nowPlaying?.subsonic_id;
+
+    const artwork = subsonicId
+      ? [
+          // Real cover first; the app icon trails as a fallback in case the
+          // Subsonic fetch errors or the track has no embedded art (some
+          // browsers will try the next artwork entry when one fails).
+          {
+            src: `${API_URL}/cover/${encodeURIComponent(subsonicId)}`,
+            sizes: '512x512',
+            type: 'image/jpeg',
+          },
+          { src: '/icons/192', sizes: '192x192', type: 'image/png' },
+        ]
+      : [
+          { src: '/icons/192', sizes: '192x192', type: 'image/png' },
+          { src: '/icons/512', sizes: '512x512', type: 'image/png' },
+        ];
 
     navigator.mediaSession.metadata = new window.MediaMetadata({
       title,
       artist,
       album,
-      artwork: [
-        { src: '/icons/192', sizes: '192x192', type: 'image/png' },
-        { src: '/icons/512', sizes: '512x512', type: 'image/png' },
-      ],
+      artwork,
     });
-  }, [nowPlaying?.title, nowPlaying?.artist, nowPlaying?.album]);
+  }, [nowPlaying?.title, nowPlaying?.artist, nowPlaying?.album, nowPlaying?.subsonic_id]);
 
   // Action handlers. These are bound once per change to the dependencies so
   // they always close over the latest tune / skip callbacks.

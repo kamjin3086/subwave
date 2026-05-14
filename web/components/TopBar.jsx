@@ -31,7 +31,16 @@ export default function TopBar({ tunedIn, context, djName, listeners, theme, onT
   const tagline = buildTagline(context);
   return (
     <div
-      className="absolute top-0 left-0 right-0 flex items-baseline justify-between gap-3 z-20 px-4 py-4 sm:px-8 sm:py-6"
+      // viewport-fit=cover lets the header extend under the iPhone notch /
+      // Dynamic Island. The top inset stacks the safe-area on top of the
+      // baseline gutter; left/right max() against the gutter so landscape
+      // on a notched phone doesn't clip the wordmark, while desktop keeps
+      // its wider sm: gutters.
+      className="absolute top-0 left-0 right-0 flex items-baseline justify-between gap-3 z-20
+        pt-[calc(env(safe-area-inset-top)_+_1rem)] pb-4
+        pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]
+        sm:pt-[calc(env(safe-area-inset-top)_+_1.5rem)] sm:pb-6
+        sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))]"
       style={{ borderBottom: '1px solid var(--ink)' }}
     >
       <div className="flex items-baseline gap-2 sm:gap-[14px] min-w-0">

@@ -119,6 +119,14 @@ export async function getPlaylist(id) {
   return r.playlist?.entry || [];
 }
 
+// Authenticated cover-art URL for a given Subsonic song id. Returns the
+// `getCoverArt` REST endpoint with auth params baked in; bytes are JPEG (or
+// PNG/WebP depending on what Subsonic resampled). The controller proxies
+// this through /cover/:id so listener browsers never see Subsonic creds.
+export function getCoverArtUrl(id, size = 512) {
+  return buildUrl('getCoverArt', { id, size });
+}
+
 // Returns a streamable URL for Liquidsoap to read. Wrapped in the `subhttp:`
 // protocol scheme so Liquidsoap's radio.liq routes the fetch through curl
 // instead of its built-in http.get.stream (which returns spurious 522s

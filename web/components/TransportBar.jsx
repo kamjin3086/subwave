@@ -52,7 +52,17 @@ export default function TransportBar({
         </div>
       )}
 
-      <div className="flex items-center gap-3 sm:gap-6 px-4 py-3 sm:px-8 sm:py-5">
+      <div
+        // Bottom inset keeps the Tune In / volume row clear of the iPhone
+        // home indicator when installed (viewport-fit=cover). Side insets
+        // matter for landscape on notched phones; top stays fixed so the
+        // hairline progress bar above this row sits flush.
+        className="flex items-center gap-3 sm:gap-6
+          pt-3 pb-[calc(env(safe-area-inset-bottom)_+_0.75rem)]
+          pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]
+          sm:pt-5 sm:pb-[calc(env(safe-area-inset-bottom)_+_1.25rem)]
+          sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))]"
+      >
         <button
           onClick={onTune}
           className="v3-eyebrow v3-focus cursor-pointer flex items-center gap-[10px] shrink-0 px-4 py-3 sm:px-7 sm:py-[14px]"

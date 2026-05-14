@@ -171,6 +171,32 @@ async function getListenerStats() {
 }
 
 // ---------------------------------------------------------------------------
+// GET /cover/:id — proxy Subsonic cover art so listener browsers can use it
+// as MediaSession artwork (lock screen / CarPlay / Bluetooth display) without
+// the Subsonic credentials leaking into the page. Cached aggressively at the
+// edge — cover art for a given song id never changes meaningfully.
+// ---------------------------------------------------------------------------
+app.get('/cover/:id', async (req, res) => {
+  const { id } = req.params;
+  // Subsonic ids are short alphanumerics (Navidrome uses base32 hashes).
+  // Reject anything else to keep this from being a generic SSRF surface.
+  if (!/^[\w-]{1,64}$/.test(id)) return res.status(400).end();
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(subsonic.getCoverArtUrl(id, 512), { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return res.status(502).end();
+    res.setHeader('Content-Type', r.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.send(buf);
+  } catch {
+    res.status(502).end();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /now-playing — current track + context snapshot
 // ---------------------------------------------------------------------------
 app.get('/now-playing', async (req, res) => {
