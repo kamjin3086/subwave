@@ -2,6 +2,7 @@
   "name": "subwave-mcp",
   "version": "0.1.0",
   "description": "MCP server for the SUB/WAVE personal radio station — request songs and drive the AI DJ on-air.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "subwave-mcp": "dist/index.js"

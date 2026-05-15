@@ -273,11 +273,19 @@ export async function update(patch) {
     }
     if (d.systemPrompt !== undefined) {
       const v = String(d.systemPrompt).trim();
-      if (v.length < 50 || v.length > 4000) throw new Error('dj.systemPrompt must be 50-4000 chars');
-      if (!v.includes('{name}')) {
-        throw new Error('dj.systemPrompt must contain the {name} placeholder');
+      // Empty is allowed and means "use the built-in default" — renderDjPrompt
+      // falls back to DEFAULT_DJ_PROMPT_TEMPLATE when systemPrompt is empty.
+      if (v === '') {
+        next.dj.systemPrompt = '';
+      } else {
+        if (v.length < 50 || v.length > 4000) {
+          throw new Error('dj.systemPrompt must be empty (use the default) or 50-4000 chars');
+        }
+        if (!v.includes('{name}')) {
+          throw new Error('dj.systemPrompt must contain the {name} placeholder');
+        }
+        next.dj.systemPrompt = v;
       }
-      next.dj.systemPrompt = v;
     }
     if (d.frequency !== undefined) {
       if (!FREQUENCIES.includes(d.frequency)) {
