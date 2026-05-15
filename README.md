@@ -479,3 +479,12 @@ Things you can change without touching code now live in the Settings dialog (DJ 
 - [Piper TTS](https://github.com/rhasspy/piper)
 - [Kokoro TTS](https://github.com/thewh1teagle/kokoro-onnx)
 - [Open-Meteo](https://open-meteo.com/) — free, no API key
+
+## Contributing
+
+Bug reports, ideas, and pull requests are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Security issues should be reported privately per [`SECURITY.md`](SECURITY.md).
+
+## License
+
+SUB/WAVE is released under the [MIT License](LICENSE).
