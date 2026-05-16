@@ -52,21 +52,21 @@ export async function skipTrack() {
   return sendCommand('skip', 2000);
 }
 
-// Start / stop / query the broadcast. radio.liq exposes an interactive bool
-// `on_air`; flipping it false makes the switch feeding the fallible Icecast
-// output go unavailable, which disconnects the /stream.mp3 mount — the
-// station goes off air while the mixer process keeps running.
+// Start / stop / query the broadcast. radio.liq registers stream_on /
+// stream_off / stream_status server commands: stream_off shuts the Icecast
+// output down so the /stream.mp3 mount disconnects (the station goes off
+// air); stream_on recreates it. The mixer process keeps running throughout.
 export async function startStream() {
-  return sendCommand('var.set on_air = true', 2000);
+  return sendCommand('stream_on', 2000);
 }
 
 export async function stopStream() {
-  return sendCommand('var.set on_air = false', 2000);
+  return sendCommand('stream_off', 2000);
 }
 
-// Returns true when on air, false otherwise. `var.get on_air` echoes the
-// interactive variable's value, e.g. "true" / "false".
+// Returns true when on air, false otherwise. `stream_status` replies "on" /
+// "off".
 export async function streamStatus() {
-  const res = await sendCommand('var.get on_air', 2000);
-  return /\btrue\b/i.test(res);
+  const res = await sendCommand('stream_status', 2000);
+  return /\bon\b/i.test(res);
 }

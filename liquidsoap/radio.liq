@@ -399,31 +399,53 @@ music_meta.on_metadata(on_meta)
 # OUTPUT — broadcast to Icecast
 # ---------------------------------------------------------------------------
 
-# on_air toggle — the controller flips this over telnet with
-# `var.set on_air = true|false` (and reads it with `var.get on_air`).
-# When false, the switch below has no matching case, so it becomes an
-# UNAVAILABLE source; feeding that into a fallible Icecast output makes the
-# output disconnect the /stream.mp3 mount — the station goes off air while
-# the mixer process keeps running. Outputs don't expose start/stop telnet
-# commands in this Liquidsoap build, so this is the way to control it live.
-# State is not persisted: a mixer restart brings the output back on air.
-on_air = interactive.bool("on_air", true)
-broadcast = switch(track_sensitive=false, [({on_air()}, radio)])
+# Stream on/off control. An Icecast output can't be paused, but it can be
+# shut down and recreated on demand (Liquidsoap's dynamic-sources pattern).
+# `stream_off` shuts the output down — the /stream.mp3 mount disconnects and
+# the station goes genuinely off air; `stream_on` recreates it. force_start
+# lets the recreated output start after init. The on/off state lives in refs
+# and is read back over telnet by the controller. It is NOT persisted: a
+# mixer restart always comes back on air.
+settings.init.force_start := true
 
-output.icecast(
-  %mp3(bitrate=192, samplerate=44100, stereo=true),
-  id="stream",
-  fallible=true,
-  host="icecast",
-  port=7702,
-  password=environment.get("ICECAST_SOURCE_PASSWORD"),
-  mount="/stream.mp3",
-  name="SUB/WAVE",
-  description="Personal frequency from the homelab",
-  genre="Various",
-  url="http://localhost:7700",
-  broadcast
-)
+def make_stream_output() =
+  output.icecast(
+    %mp3(bitrate=192, samplerate=44100, stereo=true),
+    id="stream",
+    fallible=true,
+    host="icecast",
+    port=7702,
+    password=environment.get("ICECAST_SOURCE_PASSWORD"),
+    mount="/stream.mp3",
+    name="SUB/WAVE",
+    description="Personal frequency from the homelab",
+    genre="Various",
+    url="http://localhost:7700",
+    radio
+  )
+end
+
+stream_shutdown = ref(fun () -> ())
+stream_on = ref(false)
+
+def stream_up() =
+  if not stream_on() then
+    o = make_stream_output()
+    stream_shutdown := o.shutdown
+    stream_on := true
+  end
+end
+
+def stream_down() =
+  if stream_on() then
+    fn = stream_shutdown()
+    fn()
+    stream_on := false
+  end
+end
+
+# On air at startup.
+stream_up()
 
 # Optional: also output to local file for archiving / podcast generation
 output.file(
@@ -448,6 +470,39 @@ server.register(
     shutdown()
     "OK"
   end
+)
+
+# Take the station off air / back on air on demand. stream_off shuts the
+# Icecast output down so the /stream.mp3 mount disconnects; stream_on
+# recreates it. stream_status reports the current state for the admin UI
+# and the listener-facing player. Operator-only — listeners can't reach this.
+server.register(
+  "stream_off",
+  description="Take the station off air (disconnect the Icecast mount)",
+  usage="stream_off",
+  fun(_) -> begin
+    log("Stream taken off air via server command")
+    stream_down()
+    "OK"
+  end
+)
+
+server.register(
+  "stream_on",
+  description="Bring the station back on air",
+  usage="stream_on",
+  fun(_) -> begin
+    log("Stream brought back on air via server command")
+    stream_up()
+    "OK"
+  end
+)
+
+server.register(
+  "stream_status",
+  description="Report whether the station is on air (on/off)",
+  usage="stream_status",
+  fun(_) -> if stream_on() then "on" else "off" end
 )
 
 # Skip the currently playing track. `radio` is the final broadcast source;
