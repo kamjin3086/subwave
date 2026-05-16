@@ -10,7 +10,7 @@ export default function TransportBar({
   setVolume,
   nowPlaying,
   elapsed,
-  djLog,
+  feed,
   tickerOn,
 }) {
   const duration = nowPlaying?.duration ?? 0;
@@ -18,7 +18,7 @@ export default function TransportBar({
   const cells = 12;
   const lit = Math.round(volume * cells);
 
-  const showTicker = tickerOn && djLog?.length > 0;
+  const showTicker = tickerOn && feed?.length > 0;
   const songLine = nowPlaying?.title
     ? `${nowPlaying.title}${nowPlaying.artist ? ' · ' + nowPlaying.artist : ''}`
     : null;
@@ -49,7 +49,7 @@ export default function TransportBar({
           On sm: and up the ticker renders inline in the controls row below. */}
       {showTicker && (
         <div className="sm:hidden flex items-center px-2 py-0">
-          <BroadcastTicker items={djLog} enabled={true} />
+          <BroadcastTicker items={feed} enabled={true} />
         </div>
       )}
 
@@ -92,7 +92,7 @@ export default function TransportBar({
             song line takes the centre slot on both. */}
         {showTicker && (
           <div className="hidden sm:flex flex-1 min-w-0">
-            <BroadcastTicker items={djLog} enabled={true} />
+            <BroadcastTicker items={feed} enabled={true} />
           </div>
         )}
         <div

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { turnClass, turnKey, turnText } from "../lib/sessionFeed";
 
 function useIsMobile() {
   const [m, setM] = useState(false);
@@ -14,40 +15,17 @@ function useIsMobile() {
   return m;
 }
 
-const VOICE_KINDS = new Set([
-  "dj-speak",
-  "station-id",
-  "link",
-  "hourly-check",
-  "weather",
-  "news",
-  "traffic",
-  "random-facts",
-]);
+// Transcript = what the DJ said on-air, which tracks aired, and the DJ's
+// reasoning around each pick. System turns (session start, pick prompts)
+// stay filtered out — they're not listener-facing.
+const TRANSCRIPT_CLASSES = new Set(["voice", "dj", "track"]);
 
-// AI-reasoning kinds: not spoken on-air, but they're the DJ's "thinking" —
-// surface them inline so listeners can see why a track was picked and how a
-// request was parsed. ai-pick.meta.reason is the LLM's stated justification;
-// intent.message already encodes the parsed intent (`"text" → intent`).
-const AI_KINDS = new Set(["ai-pick", "intent", "miss"]);
+const MARKER = { voice: "♪", dj: "◇", track: "▶" };
 
-// Transcript = what was said + which tracks aired + the AI's reasoning around
-// each pick. Operational chatter (queued/picker pool stats/scheduler/error)
-// stays filtered out.
-const TRANSCRIPT_KINDS = new Set([...VOICE_KINDS, ...AI_KINDS, "playing"]);
-
-function aiText(e) {
-  if (e.kind === "ai-pick") {
-    const reason = e.meta?.reason?.trim();
-    const source = e.meta?.source;
-    const head = `Picked ${e.message}`;
-    if (reason) return `${head} — ${reason}`;
-    if (source) return `${head} · via ${source}`;
-    return head;
-  }
-  if (e.kind === "intent") return `Heard ${e.message}`;
-  if (e.kind === "miss") return e.message;
-  return e.message;
+function tickerText(turn) {
+  const cls = turnClass(turn);
+  const text = turnText(turn);
+  return cls === "voice" ? `"${text}"` : text;
 }
 
 function Row({ items, duration, direction, opacity, fontSize, paused }) {
@@ -69,19 +47,16 @@ function Row({ items, duration, direction, opacity, fontSize, paused }) {
           fontStyle: "normal",
         }}
       >
-        {tripled.map((e, i) => {
-          const isVoice = VOICE_KINDS.has(e.kind);
-          const isAi = AI_KINDS.has(e.kind);
-          const marker = isVoice ? "♪" : isAi ? "◇" : "▶";
-          const text = isVoice ? `"${e.message}"` : isAi ? aiText(e) : e.message;
+        {tripled.map((turn, i) => {
+          const cls = turnClass(turn);
           return (
             <span
-              key={`${e.id ?? "x"}-${i}`}
+              key={turnKey(turn, i)}
               className="inline-flex items-baseline"
               style={{ padding: "0 28px" }}
             >
-              <span style={{ marginRight: 8 }}>{marker}</span>
-              <span>{text}</span>
+              <span style={{ marginRight: 8 }}>{MARKER[cls] || "·"}</span>
+              <span>{tickerText(turn)}</span>
             </span>
           );
         })}
@@ -90,18 +65,22 @@ function Row({ items, duration, direction, opacity, fontSize, paused }) {
   );
 }
 
+// `items` is the live session's `messages` array — turns of
+// { t, role, kind, text, meta }, oldest first.
 export default function BroadcastTicker({ items, enabled }) {
   const [paused, setPaused] = useState(false);
   const isMobile = useIsMobile();
 
-  // Snapshot the feed only when the newest id changes — otherwise the 5s poll
-  // would re-render every tick and visibly restart the marquee.
-  const lastId = items && items.length ? items[items.length - 1].id : null;
+  // Snapshot the feed only when the newest turn changes — otherwise the 5s
+  // poll would re-render every tick and visibly restart the marquee.
+  const lastT = items && items.length ? items[items.length - 1].t : null;
   const feed = useMemo(() => {
     if (!items?.length) return [];
-    return items.filter(e => TRANSCRIPT_KINDS.has(e.kind)).slice(-30);
+    return items
+      .filter((turn) => TRANSCRIPT_CLASSES.has(turnClass(turn)) && turn.text)
+      .slice(-30);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastId]);
+  }, [lastT]);
 
   if (!enabled || feed.length === 0) return null;
 

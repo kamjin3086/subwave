@@ -5,6 +5,7 @@
 // flip the autonomous toggles, and watch live on-air status + the booth log.
 import { useEffect, useRef, useState } from 'react';
 import { useAdminAuth } from '../../lib/adminAuth';
+import { turnClass, turnKey, turnText } from '../../lib/sessionFeed';
 import { V3AlertDialog } from '../ui/alert-dialog';
 import { V3Alert } from '../ui/alert';
 import { Card, Btn, Pill, Eyebrow, Seg, Toggle } from './ui';
@@ -43,11 +44,16 @@ export default function DashPanel() {
     let cancelled = false;
     const tick = async () => {
       try {
-        const [npR, stR] = await Promise.all([adminFetch('/now-playing'), adminFetch('/state')]);
+        const [npR, stR, seR] = await Promise.all([
+          adminFetch('/now-playing'),
+          adminFetch('/state'),
+          adminFetch('/session'),
+        ]);
         if (cancelled) return;
         const np = await npR.json().catch(() => null);
         const st = await stR.json().catch(() => null);
-        setStatus({ ...(np || {}), queue: st || {} });
+        const se = await seR.json().catch(() => null);
+        setStatus({ ...(np || {}), queue: st || {}, sessionMessages: se?.messages || [] });
         setErr(null);
       } catch (e) {
         if (!cancelled) setErr(e.message);
@@ -61,7 +67,7 @@ export default function DashPanel() {
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = 0;
-  }, [status?.queue?.djLog?.[0]?.id]);
+  }, [status?.sessionMessages?.length]);
 
   // Generic POST helper — drives the busy + feedback state.
   const act = async (key, path, body, label) => {
@@ -101,7 +107,9 @@ export default function DashPanel() {
   const q = status?.queue || {};
   const listeners = status?.listeners;
   const upcoming = q.upcoming || [];
-  const djLog = q.djLog || [];
+  // Booth log is the live DJ session, newest first. (The controller's djLog
+  // ring buffer is operator diagnostics — it lives on /admin/debug only.)
+  const booth = [...(status?.sessionMessages || [])].reverse();
 
   const showName = status?.activeShow?.name || ctx?.time?.period || '—';
   const weatherText = ctx?.weather?.condition
@@ -235,20 +243,20 @@ export default function DashPanel() {
 
           <Card
             title="Booth log"
-            sub={`${djLog.length} recent`}
-            right={<Pill>tail · live</Pill>}
+            sub={`${booth.length} session turns`}
+            right={<Pill>session · live</Pill>}
             style={{ display: 'flex', flexDirection: 'column' }}
             bodyStyle={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
           >
-            {djLog.length === 0 ? (
-              <div style={{ fontStyle: 'italic', color: 'var(--muted)' }}>nothing logged yet</div>
+            {booth.length === 0 ? (
+              <div style={{ fontStyle: 'italic', color: 'var(--muted)' }}>no session turns yet</div>
             ) : (
               <div ref={logRef} style={{ flex: 1, minHeight: 220, overflowY: 'auto' }}>
-                {djLog.map(e => (
-                  <div key={e.id} className={`log ${kindTone(e.kind)}`}>
-                    <span className="t">{new Date(e.t).toLocaleTimeString('en-GB', { hour12: false })}</span>
-                    <span className="k">[{e.kind}]</span>
-                    <span className="msg">{e.message}</span>
+                {booth.map((turn, i) => (
+                  <div key={turnKey(turn, i)} className={`log ${classTone(turnClass(turn))}`}>
+                    <span className="t">{new Date(turn.t).toLocaleTimeString('en-GB', { hour12: false })}</span>
+                    <span className="k">[{turn.kind}]</span>
+                    <span className="msg">{turnText(turn)}</span>
                   </div>
                 ))}
               </div>
@@ -383,21 +391,10 @@ function ToggleRow({ label, desc, on, disabled, onToggle }) {
   );
 }
 
-function kindTone(k) {
-  switch (k) {
-    case 'playing':
-    case 'request':
-    case 'dj-speak':
-    case 'hourly-check':
-    case 'hourly':
-    case 'weather':
-    case 'news':
-    case 'traffic':
-    case 'random-facts':
-    case 'link':
-    case 'station-id': return 'accent';
-    case 'error':
-    case 'miss': return 'danger';
-    default: return 'muted';
+function classTone(cls) {
+  switch (cls) {
+    case 'voice':
+    case 'track': return 'accent';
+    default:      return 'muted';
   }
 }

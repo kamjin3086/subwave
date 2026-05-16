@@ -29,7 +29,8 @@ const DRAWER_TITLES = {
 };
 
 export default function PlayerApp({ contained = false }) {
-  const { nowPlaying, context, dj, activeShow, listeners, streamOnline, state, elapsed, progress } = useStationFeed();
+  const { nowPlaying, context, dj, activeShow, listeners, streamOnline, state, session, elapsed, progress } = useStationFeed();
+  const boothFeed = session.messages;
   const { audioRef, tunedIn, volume, setVolume, tune, stop } = usePlayer();
 
   // streamOnline is null until the first poll resolves — only treat an
@@ -148,7 +149,7 @@ export default function PlayerApp({ contained = false }) {
         setVolume={setVolume}
         nowPlaying={nowPlaying}
         elapsed={elapsed}
-        djLog={state.djLog}
+        feed={boothFeed}
         tickerOn={tickerOn}
       />
 
@@ -160,7 +161,7 @@ export default function PlayerApp({ contained = false }) {
       >
         {drawer === 'queue'   && <QueueDrawer items={state.upcoming} />}
         {drawer === 'history' && <HistoryDrawer items={state.history} />}
-        {drawer === 'booth'   && <BoothDrawer items={state.djLog} />}
+        {drawer === 'booth'   && <BoothDrawer items={boothFeed} />}
         {drawer === 'request' && (
           <RequestDrawer
             requestText={requestText} setRequestText={setRequestText}

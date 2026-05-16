@@ -1,5 +1,7 @@
 'use client';
 
+import { turnClass, turnKey, turnText } from '../../lib/sessionFeed';
+
 function fmtClock(ts) {
   if (!ts) return '--:--';
   const d = new Date(ts);
@@ -7,14 +9,19 @@ function fmtClock(ts) {
 }
 
 const KIND_LABEL = {
-  said: 'SAID',
+  link: 'LINK',
   weather: 'WX',
   'station-id': 'IDENT',
+  hourly: 'TIME',
   request: 'REQ',
-  miss: 'MISS',
-  scheduler: 'OPS',
-  error: 'ERR',
+  pick: 'PICK',
+  play: 'PLAY',
+  scenario: 'CUE',
 };
+
+// Listener-facing turns only — what the DJ said, picked, or aired. System
+// events (pick prompts, restarts) stay out of the marketing booth column.
+const SHOWN_CLASSES = new Set(['voice', 'dj', 'track']);
 
 // Marketing fallback — believable, varied entries the DJ would actually
 // log. Used only when live djLog is empty. Times are computed at render
@@ -35,7 +42,10 @@ function buildExamples() {
 }
 
 export default function BoothColumn({ items = [] }) {
-  const live = items.slice(0, 6);
+  const live = items
+    .filter((turn) => SHOWN_CLASSES.has(turnClass(turn)) && turn.text)
+    .slice(-6)
+    .reverse();
   const recent = live.length > 0 ? live : buildExamples();
   const isExample = live.length === 0;
 
@@ -67,8 +77,8 @@ export default function BoothColumn({ items = [] }) {
 
       <div>
         {recent.map((it, i) => (
-          <div key={i} className="bs-row">
-            <time>{fmtClock(it.timestamp || it.at)}</time>
+          <div key={it.t ? turnKey(it, i) : i} className="bs-row">
+            <time>{fmtClock(it.t || it.timestamp || it.at)}</time>
             <div>
               <span
                 style={{
@@ -81,7 +91,7 @@ export default function BoothColumn({ items = [] }) {
               >
                 {KIND_LABEL[it.kind] || (it.kind || '').toUpperCase().slice(0, 5) || '—'}
               </span>
-              <span style={{ color: 'var(--ink)' }}>{it.message || it.text || ''}</span>
+              <span style={{ color: 'var(--ink)' }}>{it.message || turnText(it)}</span>
             </div>
           </div>
         ))}

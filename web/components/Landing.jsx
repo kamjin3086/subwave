@@ -21,7 +21,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 // and state are real, just framed in a browser-window mock. The sections
 // below explain what SUB/WAVE is, who's DJing, and how the broadcast works.
 export default function Landing() {
-  const { state, dj } = useStationFeed();
+  const { state, dj, session } = useStationFeed();
   const [persona, setPersona] = useState(null);
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function Landing() {
         </section>
 
         <section className="bs-section">
-          <BoothColumn items={state.djLog} />
+          <BoothColumn items={session.messages} />
         </section>
 
         <section className="bs-section">

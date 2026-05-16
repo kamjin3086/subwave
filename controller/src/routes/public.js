@@ -121,6 +121,27 @@ router.get('/state', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /session — the live DJ session's chat history, for the player Booth feed.
+// Returns the session header plus a bounded tail of its `messages` turns
+// ({ t, role, kind, text, meta }). Public-safe: the turns only carry what the
+// DJ already says or does on-air. Returns nulls when no session is live.
+// ---------------------------------------------------------------------------
+router.get('/session', (req, res) => {
+  const s = session.getSession();
+  if (!s) return res.json({ session: null, messages: [] });
+  res.json({
+    session: {
+      id: s.id,
+      kind: s.kind,
+      key: s.key,
+      startedAt: s.startedAt,
+      show: s.show?.name || null,
+    },
+    messages: s.messages.slice(-120),
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /health
 // ---------------------------------------------------------------------------
 router.get('/health', (req, res) => res.json({ status: 'on-air' }));

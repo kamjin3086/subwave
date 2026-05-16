@@ -1,22 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { turnClass, turnKey, turnText, isDjTurn } from '../../lib/sessionFeed';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'dj', label: 'DJ' },
-  { id: 'system', label: 'System' },
+  { id: 'tracks', label: 'Tracks' },
 ];
-
-// Voice = anything the DJ actually speaks on-air.
-const VOICE_KINDS = new Set(['dj-speak', 'station-id', 'link', 'hourly-check', 'weather', 'news', 'traffic', 'random-facts']);
-const DJ_KINDS = new Set([...VOICE_KINDS, 'ai-pick', 'request', 'intent', 'playing', 'queued', 'miss']);
-
-// Operator-only diagnostics that aren't booth content. The `picker` line
-// ("pool 14 (similar=8 mood-library=4 …)") summarises the candidate set the
-// LLM saw — useful on /admin/debug, but the ai-pick that follows a few
-// seconds later already carries the listener-facing info (track + reason).
-const HIDDEN_KINDS = new Set(['picker']);
 
 function shortTime(t) {
   try {
@@ -26,32 +17,30 @@ function shortTime(t) {
   }
 }
 
-function kindColor(kind) {
-  if (VOICE_KINDS.has(kind)) return 'var(--accent)';
-  switch (kind) {
-    case 'playing': return 'var(--ink)';
-    case 'request': return 'var(--accent)';
-    case 'intent':  return 'var(--ink)';
-    case 'ai-pick':
-    case 'queued':  return 'var(--muted)';
-    case 'error':
-    case 'miss':    return '#c0392b';
-    case 'scheduler': return 'var(--muted)';
-    default: return 'var(--muted)';
+function classColor(cls) {
+  switch (cls) {
+    case 'voice': return 'var(--accent)';
+    case 'dj':    return 'var(--ink)';
+    case 'track': return 'var(--muted)';
+    default:      return 'var(--muted)';
   }
 }
 
+// `items` is the live session's `messages` array — turns of
+// { t, role, kind, text, meta }, oldest first. Shown newest first.
 export default function BoothDrawer({ items }) {
   const [filter, setFilter] = useState('all');
 
   const filtered = useMemo(() => {
     if (!items?.length) return [];
-    const visible = items.filter((e) => !HIDDEN_KINDS.has(e.kind));
-    if (filter === 'all') return visible;
-    return visible.filter((e) => {
-      const isDj = DJ_KINDS.has(e.kind);
-      return filter === 'dj' ? isDj : !isDj;
-    });
+    // System turns (session cues, pick prompts) are operator-facing — never
+    // shown on the player. Only voice / dj / track turns reach listeners.
+    const ordered = [...items]
+      .filter((turn) => turnClass(turn) !== 'system')
+      .reverse();
+    if (filter === 'all') return ordered;
+    return ordered.filter((turn) =>
+      filter === 'dj' ? isDjTurn(turn) : turnClass(turn) === 'track');
   }, [items, filter]);
 
   return (
@@ -100,12 +89,14 @@ export default function BoothDrawer({ items }) {
         </div>
       )}
 
-      {filtered.map((e) => {
-        const isVoice = VOICE_KINDS.has(e.kind);
-        const color = kindColor(e.kind);
+      {filtered.map((turn, i) => {
+        const cls = turnClass(turn);
+        const isVoice = cls === 'voice';
+        const color = classColor(cls);
+        const text = turnText(turn);
         return (
           <div
-            key={e.id}
+            key={turnKey(turn, i)}
             style={{
               padding: '12px 0',
               borderBottom: '1px solid var(--soft-border)',
@@ -119,7 +110,7 @@ export default function BoothDrawer({ items }) {
                 className="v3-tab-num"
                 style={{ fontSize: 10, color: 'var(--muted)', minWidth: 56 }}
               >
-                {shortTime(e.t)}
+                {shortTime(turn.t)}
               </span>
               <span
                 style={{
@@ -130,22 +121,22 @@ export default function BoothDrawer({ items }) {
                   fontWeight: 600,
                 }}
               >
-                {e.kind}
+                {turn.kind}
               </span>
             </div>
             <div
               style={{
                 fontSize: isVoice ? 14 : 13,
-                color: isVoice ? 'var(--ink)' : 'var(--ink)',
+                color: 'var(--ink)',
                 fontStyle: isVoice ? 'italic' : 'normal',
                 fontFamily: isVoice ? 'Georgia, "Times New Roman", serif' : undefined,
                 lineHeight: 1.45,
                 wordBreak: 'break-word',
               }}
             >
-              {isVoice ? `“${e.message}”` : e.message}
+              {isVoice ? `“${text}”` : text}
             </div>
-            <MetaLine kind={e.kind} meta={e.meta} />
+            <MetaLine cls={cls} meta={turn.meta} />
           </div>
         );
       })}
@@ -153,25 +144,18 @@ export default function BoothDrawer({ items }) {
   );
 }
 
-function MetaLine({ kind, meta }) {
+function MetaLine({ cls, meta }) {
   if (!meta) return null;
   const bits = [];
-  if (meta.requestedBy) bits.push(`req by ${meta.requestedBy}`);
-  if (meta.source && kind === 'playing') bits.push(`source: ${meta.source}`);
-  if (typeof meta.queueDepth === 'number' && kind === 'queued') {
-    bits.push(`depth ${meta.queueDepth}`);
+  const requester = meta.requester || meta.requestedBy;
+  if (requester) bits.push(`req by ${requester}`);
+  if (cls === 'track' && meta.source) bits.push(`source: ${meta.source}`);
+  if (meta.artist || meta.title) {
+    bits.push([meta.title, meta.artist].filter(Boolean).join(' — '));
   }
-  if (kind === 'intent') {
-    if (meta.mood) bits.push(`mood: ${meta.mood}`);
-    if (meta.artist) bits.push(`artist: ${meta.artist}`);
-    if (meta.scope && meta.scope !== 'song') bits.push(`scope: ${meta.scope}`);
-    if (meta.sort) bits.push(`sort: ${meta.sort}`);
-    if (Array.isArray(meta.searchTerms) && meta.searchTerms.length) {
-      bits.push(`search: ${meta.searchTerms.join(', ')}`);
-    }
-  }
-  const reason = meta.reason;
-  if (!bits.length && !reason) return null;
+  // A `dj` pick turn can carry the spoken link it wrote (`meta.say`).
+  const say = typeof meta.say === 'string' ? meta.say.trim() : '';
+  if (!bits.length && !say) return null;
   return (
     <div style={{ marginTop: 4 }}>
       {bits.length > 0 && (
@@ -186,7 +170,7 @@ function MetaLine({ kind, meta }) {
           {bits.join(' · ')}
         </div>
       )}
-      {reason && (
+      {say && (
         <div
           style={{
             fontSize: 11,
@@ -196,7 +180,7 @@ function MetaLine({ kind, meta }) {
             fontStyle: 'italic',
           }}
         >
-          ↳ {reason}
+          ↳ “{say}”
         </div>
       )}
     </div>

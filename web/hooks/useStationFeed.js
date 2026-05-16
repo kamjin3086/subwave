@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
-// 5s polling of /now-playing + /state, plus a 1s elapsed tick reset on
-// track-change. Single source of truth for "what's on air right now".
+// 5s polling of /now-playing + /state + /session, plus a 1s elapsed tick reset
+// on track-change. Single source of truth for "what's on air right now".
 export function useStationFeed() {
   const [nowPlaying, setNowPlaying] = useState(null);
   const [context, setContext] = useState(null);
@@ -16,15 +16,19 @@ export function useStationFeed() {
   // so the player doesn't flash "offline" before the first poll resolves.
   const [streamOnline, setStreamOnline] = useState(null);
   const [state, setState] = useState({ upcoming: [], history: [], djLog: [] });
+  // The live DJ session — { session: {…}|null, messages: [] }. Drives the
+  // Booth feed and the broadcast ticker.
+  const [session, setSession] = useState({ session: null, messages: [] });
   const [elapsed, setElapsed] = useState(0);
   const trackStartRef = useRef(null);
 
   useEffect(() => {
     const tick = async () => {
       try {
-        const [npRes, stRes] = await Promise.all([
+        const [npRes, stRes, seRes] = await Promise.all([
           fetch(`${API_URL}/now-playing`).then(r => r.json()),
           fetch(`${API_URL}/state`).then(r => r.json()),
+          fetch(`${API_URL}/session`).then(r => r.json()),
         ]);
         setNowPlaying(prev => {
           if (npRes.nowPlaying?.title !== prev?.title || npRes.nowPlaying?.artist !== prev?.artist) {
@@ -39,6 +43,7 @@ export function useStationFeed() {
         if (npRes.listeners) setListeners(npRes.listeners);
         if (typeof npRes.streamOnline === 'boolean') setStreamOnline(npRes.streamOnline);
         setState(stRes);
+        if (seRes && Array.isArray(seRes.messages)) setSession(seRes);
       } catch {}
     };
     tick();
@@ -58,5 +63,5 @@ export function useStationFeed() {
   const duration = nowPlaying?.duration ?? 0;
   const progress = duration > 0 ? Math.min(1, elapsed / duration) : 0;
 
-  return { nowPlaying, context, dj, activeShow, listeners, streamOnline, state, elapsed, progress };
+  return { nowPlaying, context, dj, activeShow, listeners, streamOnline, state, session, elapsed, progress };
 }
