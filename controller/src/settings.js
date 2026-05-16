@@ -44,9 +44,9 @@ export const FREQUENCIES = ['quiet', 'moderate', 'aggressive'];
 export const TTS_ENGINES = ['piper', 'kokoro', 'cloud'];
 
 // LLM provider abstraction. `ollama` is the homelab default; the cloud
-// providers are opt-in and resolved by llm/provider.js. `gateway` routes
-// through the Vercel AI Gateway (a single key, any vendor).
-export const LLM_PROVIDERS = ['ollama', 'anthropic', 'openai', 'gateway'];
+// providers are opt-in and resolved by llm/provider.js. `openrouter` and
+// `gateway` are aggregators — one key, any vendor's models.
+export const LLM_PROVIDERS = ['ollama', 'anthropic', 'openai', 'google', 'openrouter', 'gateway'];
 
 // Cloud TTS vendors usable by the `cloud` engine.
 export const TTS_CLOUD_PROVIDERS = ['openai', 'elevenlabs'];

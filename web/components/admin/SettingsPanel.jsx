@@ -632,7 +632,11 @@ function LlmSection({ data, form, setForm, busy, saveMsg, saveSettings }) {
                 ? 'Leave blank to use the OLLAMA_MODEL default.'
                 : form.llm.provider === 'gateway'
                   ? 'Gateway model id, e.g. “anthropic/claude-sonnet-4-5”.'
-                  : 'Model id for the chosen provider — required.'}
+                  : form.llm.provider === 'openrouter'
+                    ? 'OpenRouter model id, e.g. “google/gemini-2.5-flash”.'
+                    : form.llm.provider === 'google'
+                      ? 'Gemini model id, e.g. “gemini-2.5-flash”.'
+                      : 'Model id for the chosen provider — required.'}
             </div>
           </div>
 
@@ -653,7 +657,7 @@ function LlmSection({ data, form, setForm, busy, saveMsg, saveSettings }) {
               <div className="field-hint">
                 {form.llm.apiKeySet
                   ? 'A key is set. Leave blank to keep it; type to replace.'
-                  : 'Or set the provider env var (ANTHROPIC_API_KEY / OPENAI_API_KEY / AI_GATEWAY_API_KEY).'}
+                  : 'Or set the provider env var (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY / OPENROUTER_API_KEY / AI_GATEWAY_API_KEY).'}
               </div>
             </div>
           )}

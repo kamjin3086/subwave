@@ -11,7 +11,9 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.77",
     "@ai-sdk/elevenlabs": "^2.0.33",
+    "@ai-sdk/google": "^3.0.75",
     "@ai-sdk/openai": "^3.0.63",
+    "@openrouter/ai-sdk-provider": "^2.9.0",
     "ai": "^6.0.182",
     "express": "^4.21.0",
     "node-cron": "^3.0.3",
