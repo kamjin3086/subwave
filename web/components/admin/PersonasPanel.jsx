@@ -8,7 +8,7 @@
 // Everything POSTs to /settings and applies live — no mixer restart.
 import { useEffect, useState } from 'react';
 import { useAdminAuth } from '../../lib/adminAuth';
-import { Card, Btn, Pill, Eyebrow, Seg } from './ui';
+import { Card, Btn, Pill, Eyebrow, Seg, Toggle } from './ui';
 
 const FREQUENCIES = [
   { id: 'quiet',      label: 'Quiet',      desc: 'Talks every 8–20 tracks · station ID once an hour · weather hourly on change.' },
@@ -77,6 +77,9 @@ export default function PersonasPanel() {
         const defaultPrompt = j.defaults?.djPrompt || '';
         const stored = v.djPrompt || '';
         const custom = stored !== '' && stored !== defaultPrompt;
+        // Catalog of every skill. A persona with no stored `skills` (legacy /
+        // code default) is treated as running all of them.
+        const allSkills = (j.skills?.catalog || []).map(s => s.name);
         setForm({
           personas: v.personas.map(p => ({
             id: p.id,
@@ -89,6 +92,7 @@ export default function PersonasPanel() {
               cloudProvider: p.tts?.cloudProvider ?? 'openai',
               voice: p.tts?.voice ?? 'bf_isabella',
             },
+            skills: Array.isArray(p.skills) ? p.skills : allSkills,
           })),
           activePersonaId: v.activePersonaId,
           useCustomPrompt: custom,
@@ -104,6 +108,8 @@ export default function PersonasPanel() {
     setForm(f => ({ ...f, personas: f.personas.map((p, idx) => (idx === i ? { ...p, ...patch } : p)) }));
   const setPersonaTts = (i, patch) =>
     setForm(f => ({ ...f, personas: f.personas.map((p, idx) => (idx === i ? { ...p, tts: { ...p.tts, ...patch } } : p)) }));
+  const setPersonaSkills = (i, skills) =>
+    setForm(f => ({ ...f, personas: f.personas.map((p, idx) => (idx === i ? { ...p, skills } : p)) }));
   const addPersona = () =>
     setForm(f => {
       if (f.personas.length >= PERSONA_MAX) return f;
@@ -113,6 +119,7 @@ export default function PersonasPanel() {
           id: clientMintId(), name: 'New persona', tagline: '',
           frequency: 'moderate', soul: '',
           tts: { engine: 'piper', cloudProvider: 'openai', voice: 'bf_isabella' },
+          skills: (data?.skills?.catalog || []).map(s => s.name),
         }],
       };
     });
@@ -153,6 +160,7 @@ export default function PersonasPanel() {
               cloudProvider: p.tts.cloudProvider,
               voice: p.tts.voice.trim() || 'bf_isabella',
             },
+            skills: p.skills,
           })),
           activePersonaId: form.activePersonaId,
           djPrompt: form.useCustomPrompt ? form.systemPrompt.trim() : '',
@@ -169,6 +177,7 @@ export default function PersonasPanel() {
 
   const kokoroVoices = data?.tts?.kokoroVoices || [];
   const cloudProviders = data?.tts?.cloudProviders || ['openai', 'elevenlabs'];
+  const skillCatalog = data?.skills?.catalog || [];
 
   if (err) {
     return (
@@ -340,6 +349,7 @@ export default function PersonasPanel() {
                   {p.tts.engine !== 'piper' && p.tts.voice.trim() && (
                     <Pill style={{ fontSize: 8 }}>{p.tts.voice.trim()}</Pill>
                   )}
+                  <Pill style={{ fontSize: 8 }}>{p.skills.length} skill{p.skills.length === 1 ? '' : 's'}</Pill>
                   {!valid && <Pill style={{ fontSize: 8, color: 'var(--danger)', borderColor: 'var(--danger)' }}>incomplete</Pill>}
                 </div>
               </button>
@@ -528,6 +538,50 @@ export default function PersonasPanel() {
                     The voice id for the chosen provider, e.g. <code>alloy</code> (OpenAI) or an ElevenLabs voice id.
                   </div>
                 </div>
+              </div>
+            )}
+          </Card>
+
+          <Card title="Skills" sub="autonomous segments this persona runs">
+            <p style={{ color: 'var(--muted)', fontSize: 12, lineHeight: 1.6, marginBottom: 10 }}>
+              When this persona is on air, only the skills ticked here can fire. A skill must
+              also be enabled station-wide on the <strong>Skills</strong> page.
+            </p>
+            {skillCatalog.length === 0 ? (
+              <div style={{ color: 'var(--muted)', fontStyle: 'italic', fontSize: 12 }}>
+                no skills available
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 0 }}>
+                {skillCatalog.map(s => {
+                  const on = focused.skills.includes(s.name);
+                  return (
+                    <div
+                      key={s.name}
+                      style={{
+                        display: 'grid', gridTemplateColumns: '1fr auto', gap: 16,
+                        padding: '12px 0', alignItems: 'center',
+                        borderBottom: '1px dashed var(--separator-strong)',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{s.label || s.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                          {s.description}
+                        </div>
+                      </div>
+                      <Toggle
+                        on={on}
+                        onClick={() => setPersonaSkills(
+                          safeIdx,
+                          on
+                            ? focused.skills.filter(n => n !== s.name)
+                            : [...focused.skills, s.name],
+                        )}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Card>

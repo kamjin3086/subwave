@@ -35,14 +35,13 @@ export const DJ_SOULS = [
 
 export const FREQUENCIES = ['quiet', 'moderate', 'aggressive'];
 
-// TTS engines + voice-kinds. Engine `null` (or missing) for a kind means
-// "use defaultEngine". The DJ-spoken kinds are overridden at runtime by the
-// active/effective persona's own TTS config — see audio/tts.js.
+// TTS engines. Every spoken segment is voiced by the on-air persona's own
+// `tts` config (see audio/tts.js); only jingle rendering falls back to the
+// global defaultEngine.
 //
 // `cloud` routes through the AI SDK (OpenAI / ElevenLabs speech models) —
 // see llm/speech.js. `piper` and `kokoro` stay local CLI/worker engines.
 export const TTS_ENGINES = ['piper', 'kokoro', 'cloud'];
-export const TTS_KINDS   = ['dj-speak', 'link', 'station-id', 'hourly-check', 'weather', 'news', 'traffic', 'random-facts', 'jingle'];
 
 // LLM provider abstraction. `ollama` is the homelab default; the cloud
 // providers are opt-in and resolved by llm/provider.js. `gateway` routes
@@ -77,12 +76,16 @@ export const KOKORO_VOICES_BRITISH = [
 
 const KOKORO_VOICE_RE = /^[a-z]{2}_[a-z0-9]+$/;
 const ID_RE = /^[a-z0-9_]{3,32}$/;
+// Skill slugs (e.g. 'weather', 'random-facts'). The skills registry is the
+// source of truth for which slugs exist; settings only checks the shape.
+const SKILL_SLUG_RE = /^[a-z0-9-]{1,40}$/;
 
 const PERSONA_LIMIT = 12;
 const SHOWS_LIMIT = 64;
 const SOULS_LIMIT = 10;
 const SOUL_MIN = 1;
 const SOUL_MAX = 400;
+const SKILLS_PER_PERSONA_LIMIT = 20;
 
 // Server-minted opaque id, e.g. mintId('p_') -> 'p_a1b2c3'.
 function mintId(prefix) {
@@ -120,7 +123,6 @@ const DEFAULTS = {
   schedule: emptyWeek(),
   tts: {
     defaultEngine: 'piper',
-    byKind: Object.fromEntries(TTS_KINDS.map(k => [k, null])),
     kokoro: { voice: 'bf_isabella' },
     // Cloud engine config — used when an engine resolves to 'cloud'. A persona
     // chooses provider+voice; `model` and `apiKey` stay shared here. `apiKey`
@@ -165,6 +167,25 @@ function normalizeSouls(raw) {
   return out;
 }
 
+// Persona skill assignment. `null` (raw not an array) is the "all skills"
+// sentinel — used by legacy personas and the code default so behaviour is
+// unchanged until the operator explicitly picks a subset. An empty array
+// means "this persona runs no skills".
+function normalizeSkills(raw) {
+  if (!Array.isArray(raw)) return null;
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const v = item.trim();
+    if (!SKILL_SLUG_RE.test(v) || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+    if (out.length >= SKILLS_PER_PERSONA_LIMIT) break;
+  }
+  return out;
+}
+
 function normalizeTts(raw) {
   const engine = TTS_ENGINES.includes(raw?.engine) ? raw.engine : 'piper';
   const cloudProvider = TTS_CLOUD_PROVIDERS.includes(raw?.cloudProvider) ? raw.cloudProvider : 'openai';
@@ -186,6 +207,7 @@ function normalizePersona(raw) {
     frequency: FREQUENCIES.includes(raw.frequency) ? raw.frequency : 'moderate',
     soul,
     tts: normalizeTts(raw.tts),
+    skills: normalizeSkills(raw.skills),
   };
 }
 
@@ -316,10 +338,6 @@ export async function load() {
       defaultEngine: TTS_ENGINES.includes(stored.tts?.defaultEngine)
         ? stored.tts.defaultEngine
         : DEFAULTS.tts.defaultEngine,
-      byKind: Object.fromEntries(TTS_KINDS.map(k => {
-        const v = stored.tts?.byKind?.[k];
-        return [k, TTS_ENGINES.includes(v) ? v : null];
-      })),
       kokoro: {
         voice: (typeof stored.tts?.kokoro?.voice === 'string'
                 && KOKORO_VOICE_RE.test(stored.tts.kokoro.voice))
@@ -424,10 +442,30 @@ function validatePersonasStrict(raw) {
       throw new Error(`personas[${i}].frequency must be one of: ${FREQUENCIES.join(', ')}`);
     }
     const tts = validateTtsBlock(item.tts, `personas[${i}]`);
+    // skills — optional. Absent → null ("all skills", legacy/default). Present
+    // → an explicit slug array (the UI always sends one once edited).
+    let skills = null;
+    if (item.skills !== undefined && item.skills !== null) {
+      if (!Array.isArray(item.skills)) {
+        throw new Error(`personas[${i}].skills must be an array of skill names`);
+      }
+      if (item.skills.length > SKILLS_PER_PERSONA_LIMIT) {
+        throw new Error(`personas[${i}].skills must be at most ${SKILLS_PER_PERSONA_LIMIT} entries`);
+      }
+      const seenSk = new Set();
+      skills = [];
+      for (const s of item.skills) {
+        const v = String(s ?? '').trim();
+        if (!SKILL_SLUG_RE.test(v)) {
+          throw new Error(`personas[${i}].skills entries must be slug strings`);
+        }
+        if (!seenSk.has(v)) { seenSk.add(v); skills.push(v); }
+      }
+    }
     let id = (typeof item.id === 'string' && ID_RE.test(item.id)) ? item.id : mintId('p_');
     if (seen.has(id)) id = mintId('p_');
     seen.add(id);
-    return { id, name, tagline, frequency: item.frequency, soul, tts };
+    return { id, name, tagline, frequency: item.frequency, soul, tts, skills };
   });
 }
 
@@ -549,24 +587,6 @@ export async function update(patch) {
         throw new Error(`tts.defaultEngine must be one of: ${TTS_ENGINES.join(', ')}`);
       }
       next.tts.defaultEngine = t.defaultEngine;
-    }
-    if (t.byKind !== undefined) {
-      if (t.byKind === null || typeof t.byKind !== 'object') {
-        throw new Error('tts.byKind must be an object');
-      }
-      for (const [k, v] of Object.entries(t.byKind)) {
-        if (!TTS_KINDS.includes(k)) {
-          throw new Error(`tts.byKind has unknown kind: ${k}`);
-        }
-        if (v === null || v === '' || v === undefined) {
-          next.tts.byKind[k] = null;
-          continue;
-        }
-        if (!TTS_ENGINES.includes(v)) {
-          throw new Error(`tts.byKind.${k} must be null or one of: ${TTS_ENGINES.join(', ')}`);
-        }
-        next.tts.byKind[k] = v;
-      }
     }
     if (t.kokoro !== undefined) {
       const k = t.kokoro || {};

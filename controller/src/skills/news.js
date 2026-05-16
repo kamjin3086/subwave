@@ -50,6 +50,8 @@ async function fetchHeadlines() {
 
 export default {
   name: 'news',
+  label: 'News headlines',
+  description: 'Reads one top headline from the configured RSS feed, in character.',
   kind: 'news',
   cooldownMs: 45 * 60 * 1000,
 

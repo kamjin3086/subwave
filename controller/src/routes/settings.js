@@ -13,6 +13,7 @@ import { restartLiquidsoap, startStream, stopStream, streamStatus } from '../bro
 import { invalidateWeatherCache } from '../context.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { tagger } from '../broadcast/tagger.js';
+import { skillCatalog } from '../skills/_registry.js';
 
 export const router = express.Router();
 
@@ -58,7 +59,6 @@ router.get('/settings', requireAdmin, async (req, res) => {
       },
       tts: {
         engines: tts.ENGINES,
-        kinds: tts.VOICE_KINDS.filter(k => k !== 'default'),
         available: tts.availableEngines(),
         kokoroVoices: settings.KOKORO_VOICES_BRITISH,
         cloudProviders: settings.TTS_CLOUD_PROVIDERS,
@@ -69,6 +69,9 @@ router.get('/settings', requireAdmin, async (req, res) => {
         providers: settings.LLM_PROVIDERS,
         active: llmProvider.activeModelLabel(),
       },
+      // Skill catalogue — consumed by the Skills page and by Personas for the
+      // per-persona skill-assignment checklist.
+      skills: { catalog: skillCatalog() },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

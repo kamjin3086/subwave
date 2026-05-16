@@ -9,6 +9,8 @@ import { djSystem, buildContextLines, decoratePrompt } from '../llm/dj.js';
 
 export default {
   name: 'traffic',
+  label: 'Traffic',
+  description: 'Tongue-in-cheek made-up traffic for the listening area — only during commute hours.',
   kind: 'traffic',
   cooldownMs: 90 * 60 * 1000,
 

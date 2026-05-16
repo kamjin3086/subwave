@@ -12,6 +12,7 @@ const NAV = [
   { href: '/admin/dash',     id: 'dash',     label: 'Dash' },
   { href: '/admin/library',  id: 'library',  label: 'Library' },
   { href: '/admin/personas', id: 'personas', label: 'Personas' },
+  { href: '/admin/skills',   id: 'skills',   label: 'Skills' },
   { href: '/admin/shows',    id: 'shows',    label: 'Shows' },
   { href: '/admin/settings', id: 'settings', label: 'Settings' },
   { href: '/admin/debug',    id: 'debug',    label: 'Debug' },

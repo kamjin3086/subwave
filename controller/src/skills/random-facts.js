@@ -7,6 +7,8 @@ import { djSystem, buildContextLines, decoratePrompt } from '../llm/dj.js';
 
 export default {
   name: 'random-facts',
+  label: 'Random facts',
+  description: 'A one-line "did you know" filler between tracks, lightly themed to the hour.',
   kind: 'random-facts',
   cooldownMs: 60 * 60 * 1000,
 

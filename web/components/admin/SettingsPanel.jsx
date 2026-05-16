@@ -7,31 +7,8 @@ import { useAdminAuth } from '../../lib/adminAuth';
 import { V3AlertDialog } from '../ui/alert-dialog';
 import { Card, Btn, Pill, Eyebrow, Seg, Metric } from './ui';
 
-const TTS_KIND_LABEL = {
-  'dj-speak':     'Track intros',
-  'link':         'Between-track links',
-  'station-id':   'Station IDs',
-  'hourly-check': 'Hourly check-ins',
-  'weather':      'Weather updates',
-  'news':         'News headlines',
-  'traffic':     'Traffic filler',
-  'random-facts': 'Random facts',
-  'jingle':       'Jingle rendering',
-};
-const TTS_KIND_HINT = {
-  'dj-speak':     'Played before a listener-requested track.',
-  'link':         'Short talkover links between back-to-back auto tracks.',
-  'station-id':   'Identification at :15 and :45 (frequency-dependent).',
-  'hourly-check': 'Top-of-hour time/weather mention.',
-  'weather':      'Fired when conditions change since the last announcement.',
-  'news':         'One headline from the configured RSS feed, read in DJ tone.',
-  'traffic':      'Tongue-in-cheek made-up traffic — only during commute hours.',
-  'random-facts': 'A one-liner "did you know" between tracks.',
-  'jingle':       'Engine used when you create a new jingle from text in the Jingles section.',
-};
-
 const SECTIONS = [
-  { id: 'tts',     label: 'TTS voice', hint: 'engines per kind' },
+  { id: 'tts',     label: 'TTS voice', hint: 'default engine' },
   { id: 'llm',     label: 'LLM provider', hint: 'model routing' },
   { id: 'mixer',   label: 'Mixer', hint: 'crossfade · weather' },
   { id: 'jingles', label: 'Jingles', hint: 'stingers' },
@@ -75,7 +52,6 @@ export default function SettingsPanel() {
       },
       tts: {
         defaultEngine: data.values.tts?.defaultEngine ?? 'piper',
-        byKind: { ...(data.values.tts?.byKind || {}) },
         kokoro: { voice: data.values.tts?.kokoro?.voice ?? 'bf_isabella' },
         cloud: {
           enabled: data.values.tts?.cloud?.enabled ?? false,
@@ -420,13 +396,11 @@ function EngineSeg({ engines, available, value, onChange, allowDefault, defaultE
 function TtsSection({ data, form, setForm, busy, saveMsg, saveSettings }) {
   const engines = data.tts.engines || ['piper'];
   const available = data.tts.available || {};
-  const kinds = data.tts.kinds || [];
   const hasCloud = engines.includes('cloud');
 
   const save = () => saveSettings({
     tts: {
       defaultEngine: form.tts.defaultEngine,
-      byKind: form.tts.byKind,
       kokoro: { voice: form.tts.kokoro?.voice },
       cloud: {
         enabled: form.tts.cloud.enabled,
@@ -444,16 +418,16 @@ function TtsSection({ data, form, setForm, busy, saveMsg, saveSettings }) {
     <>
       <SectionHeader
         eyebrow="tts voice"
-        title="Pick a voice engine for every kind of segment."
+        title="The default voice engine and cloud config."
         sub={<>
-          Piper is fast and CPU-cheap. Kokoro is more natural but 3–5× slower per line.
-          Cloud routes through OpenAI or ElevenLabs. Failures fall back to Piper.
+          Every spoken segment is voiced by the <strong>persona on air</strong> — set each
+          persona’s engine and voice on the Personas page. This page sets the default engine
+          used for jingle rendering and as the fallback, plus the shared Cloud engine config.
           {available.kokoro === false && (
             <span style={{ color: 'var(--danger)' }}> Kokoro is unavailable in this build.</span>
           )}
         </>}
         metrics={[
-          { n: String(kinds.length), l: 'kinds' },
           { n: String(engines.length), l: 'engines', accent: true },
         ]}
       />
@@ -470,7 +444,7 @@ function TtsSection({ data, form, setForm, busy, saveMsg, saveSettings }) {
               onChange={v => setForm(f => ({ ...f, tts: { ...f.tts, defaultEngine: v || 'piper' } }))}
               allowDefault={false}
             />
-            <div className="field-hint">Used for any kind below set to “default”.</div>
+            <div className="field-hint">Renders jingles, and is the fallback if a persona’s engine fails.</div>
           </div>
           {(data.tts.kokoroVoices?.length || 0) > 0 && (
             <div className="field">
@@ -489,41 +463,6 @@ function TtsSection({ data, form, setForm, busy, saveMsg, saveSettings }) {
               <div className="field-hint">British English only. Applies to every kind routed through Kokoro.</div>
             </div>
           )}
-        </div>
-      </Card>
-
-      {/* By kind */}
-      <Card title="Engine by kind" sub={`${kinds.length} segment types`}>
-        <div style={{ display: 'grid', gap: 0 }}>
-          {kinds.map(k => (
-            <div
-              key={k}
-              style={{
-                display: 'grid', gridTemplateColumns: '1fr auto', gap: 16,
-                padding: '14px 0', alignItems: 'center',
-                borderBottom: '1px dashed var(--separator-strong)',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.005em' }}>
-                  {TTS_KIND_LABEL[k] || k}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                  {TTS_KIND_HINT[k]}
-                </div>
-              </div>
-              <EngineSeg
-                engines={engines}
-                available={available}
-                value={form.tts.byKind?.[k] ?? null}
-                onChange={v => setForm(f => ({
-                  ...f, tts: { ...f.tts, byKind: { ...f.tts.byKind, [k]: v } },
-                }))}
-                allowDefault
-                defaultEngine={form.tts.defaultEngine}
-              />
-            </div>
-          ))}
         </div>
       </Card>
 
@@ -602,7 +541,7 @@ function TtsSection({ data, form, setForm, busy, saveMsg, saveSettings }) {
       )}
 
       <SaveBar
-        note="Applies to the next spoken segment · no mixer restart. Jingle changes only affect newly generated jingles."
+        note="Applies to jingle rendering and the engine fallback · no mixer restart. Per-segment voice comes from the persona on air."
         busy={busy}
         saveMsg={saveMsg}
         onSave={save}

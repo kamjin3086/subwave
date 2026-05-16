@@ -26,15 +26,15 @@ export const VOICE_KINDS = [
   'default',        // fallback when a kind isn't explicitly mapped
 ];
 
-// DJ-spoken kinds — these are voiced by the persona on air, so their engine
-// and voice come from the effective persona's `tts` config rather than the
-// global byKind/defaultEngine routing. Everything else (weather, news,
-// jingles…) stays on the global routing.
-const DJ_SPOKEN_KINDS = new Set(['dj-speak', 'link', 'station-id', 'hourly-check']);
+// Every spoken segment — track intros, links, idents, weather, news, traffic,
+// facts — is voiced by the persona on air: engine and voice come from the
+// effective persona's `tts` config. Only jingle rendering (a pre-recorded,
+// persona-agnostic stinger) falls back to the global defaultEngine.
+const GLOBAL_VOICE_KINDS = new Set(['jingle', 'default']);
 
-// The effective persona's TTS config for a DJ-spoken kind, else null.
+// The effective persona's TTS config for a persona-voiced kind, else null.
 function djPersonaTts(kind) {
-  if (!DJ_SPOKEN_KINDS.has(kind)) return null;
+  if (GLOBAL_VOICE_KINDS.has(kind)) return null;
   return settings.getEffectivePersona()?.tts || null;
 }
 
@@ -42,10 +42,9 @@ function resolveEngine(kind, personaTts) {
   const tts = settings.get().tts || {};
   let chosen;
   if (personaTts && ENGINES.includes(personaTts.engine)) {
-    chosen = personaTts.engine;          // persona owns the DJ-spoken engine
+    chosen = personaTts.engine;          // persona owns the spoken engine
   } else {
-    const override = (tts.byKind && tts.byKind[kind]) || null;
-    chosen = override || tts.defaultEngine || 'piper';
+    chosen = tts.defaultEngine || 'piper';   // jingle / fallback
   }
   if (!ENGINES.includes(chosen)) return 'piper';
   // `cloud` without a configured key would just throw and fall back — skip

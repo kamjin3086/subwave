@@ -44,6 +44,10 @@ function eligible(skill, ctx, now) {
   // Operator can disable a skill's autonomous firing via settings.skills.
   // Missing or non-false → enabled. Manual /dj/skill firing bypasses this.
   if (settings.get().skills?.enabled?.[skill.name] === false) return false;
+  // The persona on air owns a subset of skills. `skills === null` means the
+  // persona runs every skill (legacy/default); otherwise it must opt in.
+  const persona = settings.getEffectivePersona();
+  if (persona?.skills && !persona.skills.includes(skill.name)) return false;
   if (!gateAllows(skill.kind, now)) return false;
   const last = lastFired.get(skill.name) || 0;
   if (now.getTime() - last < (skill.cooldownMs || 0)) return false;
@@ -105,6 +109,8 @@ export function skillCatalog() {
   const enabledMap = settings.get().skills?.enabled || {};
   return SKILLS.map(s => ({
     name: s.name,
+    label: s.label || s.name,
+    description: s.description || '',
     kind: s.kind,
     cooldownMs: s.cooldownMs || 0,
     enabled: enabledMap[s.name] !== false,

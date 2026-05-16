@@ -11,6 +11,8 @@ import { djSystem, buildContextLines, decoratePrompt } from '../llm/dj.js';
 
 export default {
   name: 'weather',
+  label: 'Weather',
+  description: 'A short weather check, fired only when conditions change since the last mention.',
   kind: 'weather',
   cooldownMs: 25 * 60 * 1000,
 
