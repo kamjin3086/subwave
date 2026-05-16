@@ -28,6 +28,7 @@ state/settings.json
 state/session.json
 state/sessions/
 state/liquidsoap_*.txt
+state/queue.json
 
 # OS / editor
 .DS_Store
