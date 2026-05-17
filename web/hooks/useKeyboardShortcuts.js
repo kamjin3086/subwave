@@ -27,6 +27,10 @@ export function useKeyboardShortcuts(handlers, { disabled = false } = {}) {
 
   useEffect(() => {
     function onKeyDown(e) {
+      // Ignore auto-repeat from a held key — a shortcut should fire once per
+      // press, not stutter (a held Space would otherwise toggle tune in/out).
+      if (e.repeat) return;
+
       const mod = e.metaKey || e.ctrlKey;
 
       // Command palette chord — available even inside text fields.
