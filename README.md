@@ -13,7 +13,9 @@ button, no "up next for you." You tune in and hear whatever is on.
 
 **The listener player** — one shared broadcast, with in-app song requests.
 
-<img src="web/public/screenshots/player-request-song.webp" alt="Player — request a song" width="280">
+<img src="web/public/screenshots/listen-ipad.webp" alt="Player — /listen on iPad" width="640">
+
+<img src="web/public/screenshots/player-request-song.webp" alt="Player — request a song" width="260">
 
 **The admin console** — where the operator runs the station.
 
