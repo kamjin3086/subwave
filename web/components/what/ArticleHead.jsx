@@ -1,8 +1,8 @@
 export default function ArticleHead() {
   return (
-    <section className="bs-hero" style={{ paddingBottom: 0 }}>
+    <section className="bs-hero">
       <div className="bs-hero-head">
-        <p className="bs-eyebrow">FEATURE · THE STATION</p>
+        <p className="bs-eyebrow">A REAL INTERNET RADIO STATION</p>
         <h1 className="bs-hero-title">
           Inside SUB/WAVE — the radio station that runs itself.
         </h1>
@@ -27,23 +27,11 @@ export default function ArticleHead() {
           padding: '12px 0',
         }}
       >
-        <span style={{ color: 'var(--ink)' }}>By the SUB/WAVE Desk</span>
+        <span style={{ color: 'var(--ink)' }}>A personal radio station</span>
         <span aria-hidden="true">·</span>
-        <span>May 2026</span>
+        <span>Broadcasting from a homelab</span>
         <span aria-hidden="true">·</span>
-        <span style={{ color: 'var(--accent)' }}>Eight minute read</span>
-      </div>
-
-      <div className="bs-drop-cap" style={{ fontSize: 16, lineHeight: 1.6, maxWidth: '64ch' }}>
-        Streaming apps gave everyone their own private channel. A playlist tuned
-        to you, shuffled for you, paused the second you look away. SUB/WAVE goes
-        the other direction entirely. It is one Icecast stream — a single
-        broadcast every listener hears at the same moment — picked, announced,
-        and mixed by software running on a single box in someone&apos;s home.
-        There is no skip button. There is no &ldquo;for you.&rdquo; You tune in,
-        and you hear whatever is on the air right now, the same as everyone else.
-        What follows is a tour of the station: the player listeners see, the AI
-        DJ between the tracks, and the console the operator runs it all from.
+        <span style={{ color: 'var(--accent)' }}>Open source</span>
       </div>
     </section>
   );

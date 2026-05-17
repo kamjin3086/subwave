@@ -1,4 +1,4 @@
-import Figure from './Figure';
+import PlayerShowcase from '../landing/PlayerShowcase';
 
 const POINTS = [
   {
@@ -29,7 +29,7 @@ const POINTS = [
 
 export default function OnTheAir() {
   return (
-    <section className="bs-section">
+    <section className="bs-section" style={{ borderTop: 'none' }}>
       <p className="bs-eyebrow">PART ONE · THE PLAYER</p>
       <h2>One stream, every listener.</h2>
       <p className="muted">
@@ -37,10 +37,7 @@ export default function OnTheAir() {
         what a listener actually sees.
       </p>
 
-      <Figure
-        label="Player — Now Playing"
-        caption="The listener view: cover art, now-playing metadata, and the live waveform."
-      />
+      <PlayerShowcase />
 
       <div className="bs-whatis-grid" style={{ marginTop: 16 }}>
         {POINTS.map((p) => (

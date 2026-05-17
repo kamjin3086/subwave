@@ -51,6 +51,7 @@ export default function BehindTheDesk() {
       </p>
 
       <Figure
+        src="/screenshots/admin-dash.webp"
         label="Admin — Dash"
         caption="The Dash panel: live status, the queue, the booth log, and manual voice control."
       />
@@ -79,11 +80,13 @@ export default function BehindTheDesk() {
 
       <div className="bs-grid-split" style={{ marginTop: 16 }}>
         <Figure
+          src="/screenshots/admin-shows.webp"
           label="Admin — Weekly Schedule"
           caption="Shows: brush programming onto a 24×7 grid, each slot its own persona and mood."
         />
         <div className="bs-column-rule" aria-hidden="true" />
         <Figure
+          src="/screenshots/admin-debug.webp"
           label="Admin — Debug"
           caption="Debug: a health strip, Liquidsoap logs, and recent LLM calls — refreshed live."
         />

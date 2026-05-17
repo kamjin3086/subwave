@@ -12,7 +12,7 @@ export default function StationFooter({ djName }) {
       >
         <span style={{ color: 'var(--ink)', fontWeight: 700 }}>SUB/WAVE · EST. 2026</span>
         <span>
-          Navidrome · Liquidsoap · Icecast · Ollama · Piper
+          Navidrome · Liquidsoap · Icecast · your LLM · your voice
         </span>
         <span>
           {djName ? `${djName} on the desk · ` : ''}

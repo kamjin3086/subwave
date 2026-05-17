@@ -39,3 +39,6 @@ state/queue.json
 .idea/
 .vscode/
 tmp/
+
+# Source screenshots — originals kept local; site uses web/public/screenshots/*.webp
+docs/screenshots/

@@ -76,6 +76,38 @@ export default function UnderTheHood() {
         with a different DJ persona, a different library, and a different city
         on the dateline.
       </p>
+
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 'clamp(24px, 4vw, 56px)',
+          marginTop: 32,
+        }}
+      >
+        <p
+          style={{
+            fontSize: 16,
+            lineHeight: 1.6,
+            flex: '1 1 360px',
+            minWidth: 0,
+            margin: 0,
+          }}
+        >
+          Streaming apps gave everyone their own private channel. A playlist tuned
+          to you, shuffled for you, paused the second you look away. SUB/WAVE goes
+          the other direction entirely. It is one Icecast stream — a single
+          broadcast every listener hears at the same moment — picked, announced,
+          and mixed by software running on a single box in someone&apos;s home.
+          There is no skip button. There is no &ldquo;for you.&rdquo; You tune in,
+          and you hear whatever is on the air right now, the same as everyone else.
+        </p>
+
+        <div className="bs-dj-glyph" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+          <div className="bs-dj-vinyl" />
+        </div>
+      </div>
     </section>
   );
 }

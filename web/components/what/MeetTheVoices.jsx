@@ -29,6 +29,7 @@ export default function MeetTheVoices() {
       </p>
 
       <Figure
+        src="/screenshots/admin-personas.webp"
         label="Admin — Personas"
         caption="The persona roster: up to twelve DJ identities, each with its own voice and habits."
       />

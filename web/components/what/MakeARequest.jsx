@@ -79,11 +79,12 @@ export default function MakeARequest() {
           ))}
         </div>
         <div className="bs-column-rule" aria-hidden="true" />
-        <div>
+        <div style={{ maxWidth: 260, margin: '0 auto' }}>
           <Figure
+            src="/screenshots/player-request-song.webp"
             label="Player — Request a Song"
             caption="The request drawer: type a song, get an instant ack, watch the match land."
-            ratio="3 / 4"
+            ratio="9 / 16"
           />
         </div>
       </div>
