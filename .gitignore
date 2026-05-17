@@ -30,6 +30,9 @@ state/sessions/
 state/liquidsoap_*.txt
 state/queue.json
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # OS / editor
 .DS_Store
 *.swp
