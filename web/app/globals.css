@@ -1747,6 +1747,10 @@ body::after {
     background: var(--page-bg);
     color: var(--ink);
     min-height: 100vh;
+    /* Catch-all against accidental horizontal overflow on mobile. `clip`
+       (not `hidden`) keeps vertical page scroll intact and still lets the
+       weekly-schedule grid scroll inside its own `overflow-x:auto` wrapper. */
+    overflow-x: clip;
 }
 
 /* ── Type ── */
@@ -1794,7 +1798,8 @@ body::after {
 .admin-root .shell-header .right {
     margin-left: auto;
     display: flex;
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 10px 12px;
     align-items: center;
     font-size: 10px;
     letter-spacing: 0.22em;
@@ -1931,21 +1936,17 @@ body::after {
     .admin-root .shell-nav {
         border-right: none;
         padding-right: 0;
-        flex-direction: row;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         gap: 6px;
     }
+    /* Flatten the desktop section grouping so every nav item flows into one
+       even grid — the per-section flex rows leave lonely stretched items. */
     .admin-root .shell-nav .nav-section {
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 6px;
-        flex: 1 1 auto;
+        display: contents;
     }
     .admin-root .shell-nav .nav-section-label {
         display: none;
-    }
-    .admin-root .shell-nav .nav-item {
-        flex: 1 1 auto;
     }
     .admin-root .shell-nav .nav-foot {
         display: none;
@@ -1956,6 +1957,18 @@ body::after {
    admin page reads as a single column. `!important` is required because the
    panels set `grid-template-columns` via inline styles. */
 @media (max-width: 640px) {
+    /* Header — tighten padding and let the live-station strip drop onto its
+       own full-width line instead of cramming against the wordmark. */
+    .admin-root .shell-header {
+        padding: 12px 16px;
+        gap: 8px 10px;
+    }
+    .admin-root .shell-header .right {
+        width: 100%;
+        margin-left: 0;
+        gap: 8px 10px;
+    }
+
     .admin-root .stack-mobile {
         grid-template-columns: 1fr !important;
     }
