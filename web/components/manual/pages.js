@@ -10,4 +10,5 @@ export const MANUAL_PAGES = [
   { href: '/manual/admin', label: 'Admin & Settings' },
   { href: '/manual/llm', label: 'Models & Tokens' },
   { href: '/manual/mcp', label: 'Agent Access' },
+  { href: '/manual/clients', label: 'Listen With' },
 ];

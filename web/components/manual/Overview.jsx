@@ -37,6 +37,11 @@ const GUIDE = [
     label: 'Agent Access',
     blurb: 'Let an AI agent read the station and request tracks over the MCP server.',
   },
+  {
+    href: '/manual/clients',
+    label: 'Listen With',
+    blurb: 'Tune in from VLC, cliamp, or any app that opens an internet-radio stream.',
+  },
 ];
 
 export default function Overview() {
