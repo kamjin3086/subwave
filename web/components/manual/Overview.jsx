@@ -42,6 +42,11 @@ const GUIDE = [
     label: 'Listen With',
     blurb: 'Tune in from VLC, cliamp, or any app that opens an internet-radio stream.',
   },
+  {
+    href: '/manual/faq',
+    label: 'FAQ',
+    blurb: 'Quick answers — empty rooms, small models, mood tagging, and the parts behind the DJ.',
+  },
 ];
 
 export default function Overview() {

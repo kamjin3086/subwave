@@ -11,4 +11,5 @@ export const MANUAL_PAGES = [
   { href: '/manual/llm', label: 'Models & Tokens' },
   { href: '/manual/mcp', label: 'Agent Access' },
   { href: '/manual/clients', label: 'Listen With' },
+  { href: '/manual/faq', label: 'FAQ' },
 ];

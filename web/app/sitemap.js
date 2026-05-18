@@ -15,6 +15,7 @@ const ROUTES = [
   '/manual/llm',
   '/manual/mcp',
   '/manual/clients',
+  '/manual/faq',
   '/setup',
   '/setup/prerequisites',
   '/setup/quick-start',
