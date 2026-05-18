@@ -38,6 +38,51 @@ export default function HowTheDjWorks() {
       </section>
 
       <section className="bs-section">
+        <p className="bs-eyebrow">THE VOICE ENGINE</p>
+        <h2>Local voices, or the cloud.</h2>
+        <p>
+          The DJ's words are written by the language model, but turning them into speech
+          is a separate job — handled by one of three text-to-speech engines the operator
+          chooses under <strong>Admin &rarr; TTS voice</strong>. Two run on your own
+          hardware, one is hosted.
+        </p>
+        <ul className="bs-list">
+          <li>
+            <strong>Piper</strong> — a local engine, and the default. It's compact, runs
+            on practically any hardware, and renders speech faster than real time. The
+            voice is clear but a little synthetic. Piper is also the station's safety
+            net — see below.
+          </li>
+          <li>
+            <strong>Kokoro</strong> — a local neural model that sounds markedly more
+            natural, closer to a real broadcaster. It's heavier: it loads a model into
+            memory and takes longer per line, so it's happiest with a bit of CPU and RAM
+            headroom. It offers a range of voices, with a British selection surfaced in
+            the console.
+          </li>
+          <li>
+            <strong>Cloud</strong> — hosted text-to-speech through OpenAI or ElevenLabs,
+            using an API key. The most lifelike and expressive of the three, but it costs
+            per use and depends on the network being up.
+          </li>
+        </ul>
+        <p>
+          You don't have to commit to one. The operator can assign a different engine{' '}
+          <em>per kind</em> of segment — say a rich cloud voice for station IDs, but a
+          fast local voice for routine time checks — with everything else falling through
+          to a default engine.
+        </p>
+        <div className="bs-callout">
+          <div className="bs-eyebrow">THE DJ NEVER GOES SILENT</div>
+          <p>
+            If a voice ever fails — a cloud outage, a model that isn't installed — the
+            station drops to a local engine automatically. Piper is always there as the
+            last resort, so a spoken segment is never lost to a missing voice.
+          </p>
+        </div>
+      </section>
+
+      <section className="bs-section">
         <p className="bs-eyebrow">WHEN IT TALKS</p>
         <h2>Links, IDs, the time, the weather.</h2>
         <p>

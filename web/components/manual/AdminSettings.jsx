@@ -6,7 +6,7 @@ export default function AdminSettings() {
     <ManualPage
       eyebrow="MANUAL · 05"
       title="Admin & settings."
-      intro="For the operator running the station. The admin console is where you shape the DJ, choose the AI providers, schedule shows, and manage the jingles — no redeploy required."
+      intro="For the operator running the station. The admin console is where you shape the DJ, choose the AI providers, schedule shows, and watch how the station is behaving — all without a redeploy."
       current="/manual/admin"
     >
       <section className="bs-section">
@@ -18,48 +18,93 @@ export default function AdminSettings() {
           <code className="bs-code-inline">ADMIN_PASS</code> set when the station was
           installed. In production those credentials are mandatory: the station won't
           start without them, because the admin surface reveals too much to leave open.
-        </p>
-        <p>
-          Behind the gate are three views — the console itself,{' '}
-          <code className="bs-code-inline">/admin/settings</code>, and{' '}
-          <code className="bs-code-inline">/admin/debug</code>.
+          Signing in lands you on the Dash.
         </p>
       </section>
 
       <section className="bs-section">
-        <p className="bs-eyebrow">SETTINGS</p>
-        <h2>Tuning the station.</h2>
+        <p className="bs-eyebrow">THE LAYOUT</p>
+        <h2>Three groups of views.</h2>
+        <p>The console's pages are grouped by what they're for:</p>
+        <ul className="bs-list">
+          <li>
+            <strong>Monitor — Dash.</strong> The command centre: what's on air right now,
+            with a way to step into the autonomous DJ and steer it directly.
+          </li>
+          <li>
+            <strong>Programming — Library, Shows, Personas, Skills.</strong> Everything
+            that shapes what the station plays and who it sounds like.
+          </li>
+          <li>
+            <strong>System — Stats, Settings, Debug.</strong> How the station is behaving
+            under the hood, the engine-room settings, and a live diagnostic view.
+          </li>
+        </ul>
+      </section>
+
+      <section className="bs-section">
+        <p className="bs-eyebrow">PROGRAMMING</p>
+        <h2>Shaping the station.</h2>
         <p>
-          Settings are saved durably and take effect without a redeploy — most apply to
-          the next thing the DJ says. The main things you'll touch:
+          Everything in this group is saved durably and applies live — no redeploy, most
+          changes landing on the next thing the DJ does.
         </p>
         <ul className="bs-list">
           <li>
-            <strong>DJ personas</strong> — the roster of souls (1&ndash;10), each with a
-            name and character. The DJ picks one at random per spoken moment.
+            <strong>Library</strong> — search the music library and check how well it's
+            been mood-tagged. The tagger labels tracks with a mood so the DJ can pick by
+            feel; this is where you watch its progress.
           </li>
           <li>
-            <strong>DJ frequency</strong> — <em>quiet</em>, <em>moderate</em>, or{' '}
-            <em>aggressive</em>: how often the DJ talks, IDs the station, and reads the
-            time and weather.
+            <strong>Shows</strong> — a show is a reusable definition: a name, a topic, a
+            persona, a mood. Paint shows onto a weekly grid hour by hour; an empty hour
+            means the station runs autonomously for that hour.
+          </li>
+          <li>
+            <strong>Personas</strong> — the roster of DJ identities, one to ten. Each has
+            a name and character, a voice, a script length and a talk frequency, plus the
+            skills it's allowed to use. One persona is active at a time — though a
+            scheduled show can override which — and a single prompt template is shared by
+            all of them.
+          </li>
+          <li>
+            <strong>Skills</strong> — the real-world segments the autonomous DJ can run:
+            weather, news, traffic, facts, web search. Toggle each on or off
+            station-wide.
+          </li>
+        </ul>
+      </section>
+
+      <section className="bs-section">
+        <p className="bs-eyebrow">SETTINGS</p>
+        <h2>The engine room.</h2>
+        <p>
+          The Settings page collects the lower-level controls, in five panels:
+        </p>
+        <ul className="bs-list">
+          <li>
+            <strong>TTS voice</strong> — which text-to-speech engine and voice the DJ
+            speaks with, optionally a different one per kind of segment. The engines —
+            local and cloud — are covered in{' '}
+            <Link href="/manual/dj" className="bs-link">How the DJ Works</Link>.
           </li>
           <li>
             <strong>LLM provider</strong> — which model writes the DJ's words and picks
-            tracks. Ollama on your own hardware by default, or a hosted provider
-            (Anthropic, OpenAI, Google, and others) with an API key. Switching reroutes
-            every call immediately.
+            tracks, plus the toggles that tune the station to that model. See{' '}
+            <Link href="/manual/llm" className="bs-link">Models &amp; Tokens</Link>.
           </li>
           <li>
-            <strong>Voice (TTS)</strong> — which text-to-speech engine and voice the DJ
-            speaks with, optionally a different one per kind of segment.
+            <strong>Mixer</strong> — crossfade length, how often a jingle plays between
+            tracks, and the station's weather location.
           </li>
           <li>
-            <strong>Shows schedule</strong> — paint named shows onto a weekly grid; the DJ
-            runs each as its own session.
+            <strong>Jingles</strong> — the short pre-rendered idents the station rotates
+            between music tracks. Add, remove and re-render them through the configured
+            voice; new renders are picked up automatically.
           </li>
           <li>
-            <strong>Mix settings</strong> — crossfade length and how often a jingle plays
-            between tracks.
+            <strong>Sound FX</strong> — the library of stingers the DJ can drop into a
+            spoken break. Toggle the whole library on or off.
           </li>
         </ul>
         <div className="bs-callout">
@@ -73,24 +118,14 @@ export default function AdminSettings() {
       </section>
 
       <section className="bs-section">
-        <p className="bs-eyebrow">JINGLES</p>
-        <h2>Station idents.</h2>
-        <p>
-          Jingles are short pre-rendered TTS stingers the station rotates between music
-          tracks. The admin console manages the set — adding, removing, and re-rendering
-          them through the configured voice. A fresh install ships with none until you
-          generate them; after that, new renders are picked up automatically.
-        </p>
-      </section>
-
-      <section className="bs-section">
         <p className="bs-eyebrow">WHEN SOMETHING'S OFF</p>
-        <h2>The debug view.</h2>
+        <h2>Stats &amp; debug.</h2>
         <p>
-          <code className="bs-code-inline">/admin/debug</code> is a live snapshot for
-          diagnosing the station — recent AI calls, the mixer's status, and the most
-          recent log lines. It's the first place to look if the stream stalls or the DJ
-          goes quiet.
+          <strong>Stats</strong> reports how the station is performing — AI usage and
+          latency, and how often it's had to fall back to a backup engine.{' '}
+          <strong>Debug</strong> is a live snapshot for diagnosing trouble: recent AI
+          calls, the mixer's status, and the most recent log lines. It's the first place
+          to look if the stream stalls or the DJ goes quiet.
         </p>
         <p>
           Installing or updating the station rather than tuning it? That's covered in{' '}
