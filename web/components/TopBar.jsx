@@ -53,19 +53,6 @@ export default function TopBar({ tunedIn, context, djName, activeShow, listeners
         className="flex items-center gap-3 sm:gap-[18px] v3-caption shrink-0"
         style={{ color: 'var(--muted)' }}
       >
-        <span className="whitespace-nowrap inline-flex items-center gap-1">
-          <span
-            aria-hidden="true"
-            style={{
-              display: 'inline-block',
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: tunedIn ? 'var(--accent)' : 'var(--muted)',
-            }}
-          />
-          <span className="hidden sm:inline">{tunedIn ? 'listening' : 'not tuned'}</span>
-        </span>
         {listeners?.current != null && (
           <span
             className="whitespace-nowrap v3-tab-num inline-flex items-center gap-1.5 leading-none"
