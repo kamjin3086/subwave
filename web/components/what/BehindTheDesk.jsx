@@ -101,7 +101,7 @@ export default function BehindTheDesk() {
 
       <div className="bs-whatis-grid" style={{ marginTop: 16 }}>
         <Figure
-          src="/screenshots/admin-library.png"
+          src="/screenshots/admin-library.webp"
           label="Admin — Library"
           caption="Library: search by text, mood, and energy, queue any track, and run the mood tagger."
         />
