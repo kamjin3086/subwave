@@ -276,7 +276,13 @@ export default function PersonasPanel() {
             tts: {
               engine: p.tts.engine,
               cloudProvider: p.tts.cloudProvider,
-              voice: p.tts.voice.trim() || 'bf_isabella',
+              // Only Kokoro needs a non-empty voice fallback. Chatterbox treats
+              // an empty voice as "use the built-in voice" and rejects a Kokoro
+              // id like "bf_isabella"; piper ignores voice; cloud carries its
+              // own. So the blanket `|| 'bf_isabella'` only applies to Kokoro.
+              voice: p.tts.engine === 'kokoro'
+                ? (p.tts.voice.trim() || 'bf_isabella')
+                : p.tts.voice.trim(),
             },
             skills: p.skills,
           })),
