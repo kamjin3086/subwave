@@ -11,8 +11,8 @@ button, no "up next for you." You tune in and hear whatever is on.
 
 ## Live demo
 
-- **Landing page** — [radio.klair.co](https://radio.klair.co/)
-- **Demo player** — [radio.klair.co/listen](https://radio.klair.co/listen)
+- **Landing page** — [www.getsubwave.com](https://www.getsubwave.com/)
+- **Demo player** — [www.getsubwave.com/listen](https://www.getsubwave.com/listen)
 
 ## Screenshots
 

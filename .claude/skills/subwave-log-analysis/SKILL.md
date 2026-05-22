@@ -71,10 +71,10 @@ naturally bursty around decisions and quiet between them.
 
 - **Error rate.** Anything above ~0 warrants a look. A cluster of errors on one
   endpoint — especially `upstream 522` — almost always means the controller's
-  `NAVIDROME_URL` points at the Cloudflare-fronted origin (`music.klair.co`)
-  rather than the internal/Tailscale address. Liquidsoap works around this with
-  a `curl`-based `subhttp:` protocol, but the controller's Subsonic API client
-  does not — it should talk to Navidrome directly.
+  `NAVIDROME_URL` points at a Cloudflare-fronted public origin rather than the
+  internal/Tailscale address. Liquidsoap works around this with a `curl`-based
+  `subhttp:` protocol, but the controller's Subsonic API client does not — it
+  should talk to Navidrome directly.
 - **Latency.** `getSimilarSongs2` is the slowest Subsonic call by nature and is
   *not* memoised (it is per-track). If it dominates `avg`/`p95` ms, that is
   expected — but if it also dominates *decision latency* (see picker section),

@@ -19,7 +19,7 @@ export default function PlayerShowcase() {
         </div>
         <div className="bs-frame-url">
           <span className="text-muted">https://</span>
-          <span>radio.klair.co</span>
+          <span>www.getsubwave.com</span>
           <span className="text-muted">/listen</span>
         </div>
         <div className="bs-frame-live" aria-hidden="true">
