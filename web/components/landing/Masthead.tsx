@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { m } from 'motion/react';
 import { useClock } from '../../lib/hooks';
 import ThemeToggle from './ThemeToggle';
 
@@ -13,6 +14,11 @@ function issueNo(d: Date): number {
 // Broadsheet-style header with proper landing-page navigation. Keeps the
 // big SUB/WAVE wordmark and the double rules, drops the dateline/location/
 // DJ-name strip that belonged on a newspaper but not a marketing site.
+//
+// First-paint lift: the wordmark rises 8 px while fading in (400 ms), the
+// meta row (issue number + theme toggle) follows 180 ms behind. Gives the
+// page the "broadsheet has just been opened" feel without overplaying it.
+// The ON AIR strip is a reference frame and stays still.
 export default function Masthead() {
   const now = useClock();
 
@@ -21,20 +27,31 @@ export default function Masthead() {
       <div className="bs-rule-double" />
 
       <div className="bs-masthead-head">
-        <div className="bs-caption bs-masthead-meta flex items-center gap-[10px] text-muted">
+        <m.div
+          className="bs-caption bs-masthead-meta flex items-center gap-[10px] text-muted"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.22, delay: 0.18, ease: [0.2, 0.7, 0.2, 1] }}
+        >
           <span className="bs-masthead-issue text-[10px] tracking-[0.3em] uppercase">
             VOL. I &nbsp;·&nbsp; NO.&nbsp;{now ? issueNo(now) : '—'}
           </span>
           <ThemeToggle />
-        </div>
+        </m.div>
 
-        <Link
-          href="/"
-          aria-label="SUB/WAVE home"
-          className="bs-wordmark bs-masthead-mark text-ink no-underline"
+        <m.div
+          initial={{ y: -8, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.4, ease: [0.2, 0.7, 0.2, 1] }}
         >
-          SUB/WAVE
-        </Link>
+          <Link
+            href="/"
+            aria-label="SUB/WAVE home"
+            className="bs-wordmark bs-masthead-mark text-ink no-underline"
+          >
+            SUB/WAVE
+          </Link>
+        </m.div>
 
         <div className="bs-masthead-status flex items-center gap-2 text-[11px] font-bold tracking-[0.3em] uppercase">
           <span className="bs-live-dot" aria-hidden="true" />
