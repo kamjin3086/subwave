@@ -154,12 +154,12 @@ export async function runSetupCommand(): Promise<void> {
     err(`unknown mode: ${mode}`);
     return;
   }
-  // Always build on setup: this is the first-time install, so the
-  // first-party images (sub-wave-liquidsoap:local, etc.) don't exist
-  // locally yet, and the dev compose file references them by name with
-  // no upstream registry — so `up -d` without `--build` would try to
-  // pull from docker.io and fail.
-  const wantBuild = true;
+  // Dev compose tags `sub-wave-liquidsoap:local` and has no `image:` on the
+  // controller, so it must build locally on first install. Prod / prod-byo
+  // reference published `ghcr.io/perminder-klair/subwave-*` images — pull
+  // them instead of rebuilding from source. Operators hacking on the code
+  // can force a rebuild later via `subwave restart <svc> --build`.
+  const wantBuild = mode === 'dev';
   header(`Starting ${mode} stack`);
   muted(`docker compose -f ${file.file} up -d${wantBuild ? ' --build' : ''}`);
   console.log();

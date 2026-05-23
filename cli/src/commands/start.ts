@@ -8,7 +8,7 @@
 //     existing setup.mjs behaviour).
 //   - Poll /health for up to 30 s and report when the stream comes on-air.
 
-import { COMPOSE_FILES, detectCompose, isProdEnv, type ComposeEnv, type ComposeFile } from '../compose.ts';
+import { COMPOSE_FILES, detectCompose, type ComposeEnv, type ComposeFile } from '../compose.ts';
 import { composeUp } from '../docker.ts';
 import { waitForHealth } from '../api.ts';
 import { loadConfig, saveConfig } from '../config.ts';
@@ -43,10 +43,12 @@ export async function runStartCommand(opts: StartOpts = {}): Promise<void> {
     saveConfig(cfg);
   }
 
-  // Prod-style modes build their first-party images locally on the way up;
-  // dev never does (it pulls fully-built upstream images plus a host-side
-  // npm run dev for the web UI).
-  const wantBuild = isProdEnv(target.env);
+  // Dev compose tags `sub-wave-liquidsoap:local` and has no `image:` on the
+  // controller, so it must build locally. Prod / prod-byo reference
+  // published `ghcr.io/perminder-klair/subwave-*` images — pull them
+  // instead of rebuilding; operators can force a rebuild per-service via
+  // `subwave restart <svc> --build`.
+  const wantBuild = target.env === 'dev';
   header(`Starting ${target.env} stack`);
   muted(`docker compose -f ${target.file} up -d${wantBuild ? ' --build' : ''}`);
   console.log();
