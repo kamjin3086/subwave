@@ -115,8 +115,15 @@ export default function PlayerApp({ contained = false }: PlayerAppProps) {
     if (showTuneIn) tuneInFromOverlay();
     else tune();
   };
-  const adjustVolume = (delta: number) =>
+  // Ticker that increments only on keyboard-driven volume adjusts. The
+  // TransportBar watches it to pulse the volume cells; slider drags don't
+  // tick it (the cells need to track the finger pixel-for-pixel during a
+  // drag — pulsing would fight that).
+  const [volumePulse, setVolumePulse] = useState(0);
+  const adjustVolume = (delta: number) => {
     setVolume(v => Math.min(1, Math.max(0, Math.round((v + delta) * 100) / 100)));
+    setVolumePulse(n => n + 1);
+  };
 
   // Global keyboard shortcuts. Bare keys are suppressed while a text field
   // is focused or while the palette/help dialog owns input; ⌘K always works.
@@ -218,6 +225,7 @@ export default function PlayerApp({ contained = false }: PlayerAppProps) {
         offline={offline}
         volume={volume}
         setVolume={setVolume}
+        volumePulse={volumePulse}
         nowPlaying={nowPlaying}
         elapsed={elapsed}
         context={context}

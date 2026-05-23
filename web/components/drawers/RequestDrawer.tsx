@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, m } from 'motion/react';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
-import { Button } from '../ui/button';
 import { cn } from '@/lib/cn';
 import type { NowPlayingTrack, RequestResult, StationContext } from '@/lib/types';
 
