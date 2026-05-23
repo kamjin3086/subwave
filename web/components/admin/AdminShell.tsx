@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ComponentType, ReactNode } from 'react';
 import { useCallback, useEffect, useRef } from 'react';
+import { AnimatePresence, m } from 'motion/react';
 import { useDynamicStyle } from '../../hooks/useDynamicStyle';
 import {
   Radio,
@@ -132,6 +133,18 @@ export default function AdminShell({ children }: AdminShellProps) {
                 const Icon = n.icon;
                 return (
                   <Link key={n.id} href={n.href} className={`nav-item ${active ? 'active' : ''}`}>
+                    {/* Active background morphs across nav groups via shared
+                        layoutId — same trick as DotRail. initial={false}
+                        suppresses the first-paint animation. */}
+                    {active && (
+                      <m.span
+                        layoutId="admin-nav-active"
+                        className="nav-item-active-bg"
+                        initial={false}
+                        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                        aria-hidden="true"
+                      />
+                    )}
                     <Icon className="nav-icon" size={15} strokeWidth={2} aria-hidden="true" />
                     <span className="nav-label">{n.label}</span>
                     {n.pill && <span className="pill">{n.pill}</span>}
@@ -148,7 +161,22 @@ export default function AdminShell({ children }: AdminShellProps) {
             newsprint v3
           </div>
         </nav>
-        <main className="min-w-0">{children}</main>
+        <main className="min-w-0">
+          {/* Panel route transitions — 120 ms cross-fade between admin pages
+              keyed on pathname. No y translate (operator surface, vertical
+              drift would feel twitchy on a list of panels). */}
+          <AnimatePresence mode="wait" initial={false}>
+            <m.div
+              key={pathname}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.12 }}
+            >
+              {children}
+            </m.div>
+          </AnimatePresence>
+        </main>
       </div>
       <Toaster />
     </div>
