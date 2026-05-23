@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
+import { m } from 'motion/react';
 import { toast } from 'sonner';
 import { fmtSize } from '../../lib/format';
 import { useAdminAuth } from '../../lib/adminAuth';
@@ -619,7 +620,12 @@ function SaveBar({ note, busy, saveMsg, onSave, saveLabel, extra }: SaveBarProps
       )}
       <span className="ml-auto flex gap-2">
         {extra}
-        <Btn tone="accent" onClick={onSave} disabled={busy}>{saveLabel}</Btn>
+        {/* whileTap fires before the network call — operator feels the
+            commit even though the actual save toast lands a few hundred
+            ms later. */}
+        <m.span whileTap={{ scale: 0.97 }} className="inline-flex">
+          <Btn tone="accent" onClick={onSave} disabled={busy}>{saveLabel}</Btn>
+        </m.span>
       </span>
     </div>
   );
