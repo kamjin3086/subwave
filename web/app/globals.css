@@ -1871,12 +1871,6 @@ body::after {
 .admin-root .shell-nav .nav-item.active .nav-icon {
     opacity: 1;
 }
-.admin-root .shell-nav .nav-item-active-bg {
-    position: absolute;
-    inset: 0;
-    background: var(--ink);
-    z-index: 0;
-}
 .admin-root .shell-nav .nav-item .pill {
     font-size: 9px;
     letter-spacing: 0.16em;

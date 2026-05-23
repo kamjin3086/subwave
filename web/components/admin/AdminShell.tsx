@@ -141,7 +141,7 @@ export default function AdminShell({ children }: AdminShellProps) {
                     {active && (
                       <m.span
                         layoutId="admin-nav-active"
-                        className="nav-item-active-bg"
+                        className="absolute inset-0 z-0 bg-ink"
                         initial={false}
                         transition={{ type: 'spring', stiffness: 380, damping: 32 }}
                         aria-hidden="true"
