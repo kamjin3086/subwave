@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.16](https://github.com/perminder-klair/subwave/compare/v0.1.15...v0.1.16) (2026-05-24)
+
+
+### Features
+
+* **admin:** redo library page with working filters + coverage ([f7aaa65](https://github.com/perminder-klair/subwave/commit/f7aaa65eba60f0b8bdd1a456600631d7e4baed3f))
+* **admin:** redo library page with working filters + coverage ([417b61a](https://github.com/perminder-klair/subwave/commit/417b61a39129a125b5939f164cb307ed3c872ffd))
+
 ## [0.1.15](https://github.com/perminder-klair/subwave/compare/v0.1.14...v0.1.15) (2026-05-24)
 
 
