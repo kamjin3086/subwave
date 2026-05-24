@@ -43,13 +43,13 @@ export default function WizardShell() {
           <button
             type="button"
             onClick={() => router.push('/admin')}
-            className="rounded border border-ink bg-ink px-4 py-2 text-sm font-medium uppercase tracking-wide text-bg hover:opacity-90"
+            className="rounded border border-ink bg-ink px-4 py-2 text-sm font-medium tracking-wide text-bg uppercase hover:opacity-90"
           >
             Go to admin
           </button>
           <Link
             href="/listen"
-            className="rounded border border-ink px-4 py-2 text-sm font-medium uppercase tracking-wide text-ink hover:bg-ink/10"
+            className="rounded border border-ink px-4 py-2 text-sm font-medium tracking-wide text-ink uppercase hover:bg-ink/10"
           >
             Open the player
           </Link>
@@ -69,7 +69,7 @@ export default function WizardShell() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-ink/50">
+        <p className="text-xs font-medium tracking-[0.18em] text-ink/50 uppercase">
           SUB/WAVE — first-run setup
         </p>
         <h1 className="mt-1 text-2xl font-semibold text-ink">
@@ -82,7 +82,7 @@ export default function WizardShell() {
           <li
             key={id}
             className={
-              'rounded border px-2 py-1 text-xs uppercase tracking-wide ' +
+              'rounded border px-2 py-1 text-xs tracking-wide uppercase ' +
               (i === w.stepIdx
                 ? 'border-ink bg-ink text-bg'
                 : i < w.stepIdx
@@ -110,7 +110,7 @@ export default function WizardShell() {
           <button
             type="button"
             onClick={w.next}
-            className="rounded border border-ink bg-ink px-3 py-1.5 text-sm font-medium uppercase tracking-wide text-bg hover:opacity-90"
+            className="rounded border border-ink bg-ink px-3 py-1.5 text-sm font-medium tracking-wide text-bg uppercase hover:opacity-90"
           >
             Next →
           </button>

@@ -54,19 +54,19 @@ export default function SetupPage() {
       <div className="mt-6 flex gap-3">
         <Link
           href="/admin"
-          className="rounded border border-ink bg-ink px-4 py-2 text-sm font-medium uppercase tracking-wide text-bg hover:opacity-90"
+          className="rounded border border-ink bg-ink px-4 py-2 text-sm font-medium tracking-wide text-bg uppercase hover:opacity-90"
         >
           Admin
         </Link>
         <Link
           href="/listen"
-          className="rounded border border-ink px-4 py-2 text-sm font-medium uppercase tracking-wide text-ink hover:bg-ink/10"
+          className="rounded border border-ink px-4 py-2 text-sm font-medium tracking-wide text-ink uppercase hover:bg-ink/10"
         >
           Player
         </Link>
         <Link
           href="/setup"
-          className="rounded border border-ink/40 px-4 py-2 text-sm font-medium uppercase tracking-wide text-ink hover:bg-ink/10"
+          className="rounded border border-ink/40 px-4 py-2 text-sm font-medium tracking-wide text-ink uppercase hover:bg-ink/10"
         >
           Docs
         </Link>

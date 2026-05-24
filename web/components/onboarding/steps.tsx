@@ -26,7 +26,7 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium uppercase tracking-wide text-ink/60">{label}</span>
+      <span className="text-xs font-medium tracking-wide text-ink/60 uppercase">{label}</span>
       {children}
       {hint ? <span className="text-xs text-ink/50">{hint}</span> : null}
     </label>
@@ -120,7 +120,7 @@ export function NavidromeStep({ w }: { w: WizardController }) {
             type="button"
             onClick={onTest}
             disabled={busy || !w.data.navidrome.url || !w.data.navidrome.user || !w.data.navidrome.pass}
-            className="rounded border border-ink bg-ink px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded border border-ink bg-ink px-3 py-1.5 text-xs font-medium tracking-wide text-bg uppercase hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? 'Testing…' : 'Test connection'}
           </button>
@@ -215,7 +215,7 @@ export function LlmStep({ w }: { w: WizardController }) {
             type="button"
             onClick={onTest}
             disabled={busy || !w.data.llm.model}
-            className="rounded border border-ink bg-ink px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded border border-ink bg-ink px-3 py-1.5 text-xs font-medium tracking-wide text-bg uppercase hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? 'Asking…' : 'Send a test prompt'}
           </button>
@@ -356,7 +356,7 @@ export function JinglesStep({ w }: { w: WizardController }) {
         type="button"
         onClick={onGenerate}
         disabled={busy}
-        className="rounded border border-ink bg-ink px-4 py-2 text-sm font-medium uppercase tracking-wide text-bg hover:opacity-90 disabled:opacity-40"
+        className="rounded border border-ink bg-ink px-4 py-2 text-sm font-medium tracking-wide text-bg uppercase hover:opacity-90 disabled:opacity-40"
       >
         {busy ? 'Rendering…' : 'Generate now'}
       </button>
@@ -423,7 +423,7 @@ export function ReviewStep({
         type="button"
         onClick={onSave}
         disabled={busy}
-        className="mt-5 rounded border border-ink bg-ink px-4 py-2 text-sm font-medium uppercase tracking-wide text-bg hover:opacity-90 disabled:opacity-40"
+        className="mt-5 rounded border border-ink bg-ink px-4 py-2 text-sm font-medium tracking-wide text-bg uppercase hover:opacity-90 disabled:opacity-40"
       >
         {busy ? 'Saving…' : 'Save and finish'}
       </button>
