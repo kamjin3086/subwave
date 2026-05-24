@@ -27,20 +27,18 @@ export interface SetupConfig {
   setupCompletedAt?: string;
 }
 
-let cache: SetupConfig | null = null;
-
+// No in-process cache: the file is ~200 bytes and only read on the rare
+// /onboarding/status path (admin shell mount, onboarding page load). A
+// cache here previously caused a real bug — when the CLI's `subwave setup`
+// wrote the file from the host side, the controller kept serving its stale
+// empty snapshot and AdminShell kept bouncing the operator back to
+// /onboarding even though setup was complete.
 export async function loadSetupConfig(): Promise<SetupConfig> {
-  if (cache) return cache;
-  if (!existsSync(PATH)) {
-    cache = {};
-    return cache;
-  }
+  if (!existsSync(PATH)) return {};
   try {
-    cache = JSON.parse(await readFile(PATH, 'utf8'));
-    return cache!;
+    return JSON.parse(await readFile(PATH, 'utf8'));
   } catch {
-    cache = {};
-    return cache;
+    return {};
   }
 }
 
@@ -54,12 +52,9 @@ export async function saveSetupConfig(patch: Partial<SetupConfig>): Promise<Setu
   };
   await mkdir(dirname(PATH), { recursive: true });
   await writeFile(PATH, JSON.stringify(next, null, 2));
-  cache = next;
   return next;
 }
 
-// Hot-reload escape hatch for tests / wizard saves that want the next read to
-// hit disk again rather than the in-process cache.
-export function clearSetupConfigCache() {
-  cache = null;
-}
+// Kept for callers that previously invalidated the (now-removed) cache.
+// No-op — every read is fresh from disk.
+export function clearSetupConfigCache() {}
