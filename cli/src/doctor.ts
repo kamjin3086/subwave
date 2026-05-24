@@ -10,9 +10,9 @@
 
 import { accessSync, constants, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { detectCompose, isProdEnv, streamUrlFor, type ComposeStatus } from './compose.ts';
+import { detectCompose, isProdEnv, streamUrlFor, webBaseFor, type ComposeStatus } from './compose.ts';
 import { dockerDaemonOk, composeExec } from './docker.ts';
-import { makeClient } from './api.ts';
+import { makeClient, checkNeedsSetup } from './api.ts';
 import { getLegacyControllerEnv, getRootEnv, parseEnvFile, getStateDir, fetchErrorReason } from './util.ts';
 import { whoHolds7700, readWebDevPid, getWebDevLog, isWebDevCommand } from './web-dev.ts';
 
@@ -175,6 +175,25 @@ async function checkController(compose: ComposeStatus): Promise<Finding[]> {
         status: 'fail',
         detail: np.error ?? 'no response',
       });
+    }
+
+    // Setup status. When operators install via `subwave init` → `start`
+    // they reach a running stack without ever connecting Navidrome + LLM,
+    // which leaves the picker starved and produces a cascade of downstream
+    // warnings (empty auto.m3u, /stream.mp3 404, stream offline). Surface
+    // the root cause directly so the summary points at setup, not symptoms.
+    const needsSetup = await checkNeedsSetup(compose.env);
+    if (needsSetup === true) {
+      out.push({
+        label: 'setup',
+        status: 'fail',
+        detail: 'incomplete — Navidrome + LLM not configured',
+        hint: `Run \`subwave setup\` or open ${webBaseFor(compose.env)}/onboarding to finish configuration.`,
+      });
+    } else if (needsSetup === false) {
+      out.push({ label: 'setup', status: 'ok', detail: 'complete' });
+    } else {
+      out.push({ label: 'setup', status: 'skip', detail: 'status endpoint unreachable' });
     }
   }
 
