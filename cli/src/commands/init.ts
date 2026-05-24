@@ -17,7 +17,9 @@ import crypto from 'node:crypto';
 
 import { COMPOSE_YML, COMPOSE_BYO_YML, ENV_EXAMPLE } from '../assets.ts';
 import { DEFAULT_SUBWAVE_HOME, writeHomeConfig } from '../home.ts';
+import { loadConfig, saveConfig } from '../config.ts';
 import { writeEnvFile } from '../util.ts';
+import { runStartCommand } from './start.ts';
 import {
   banner, header, ok, warn, err, info, muted, p, pc, exitIfCancelled, pauseForEnter,
 } from '../ui.ts';
@@ -41,11 +43,21 @@ export async function runInitCommand(): Promise<void> {
   const answers = await collectAnswers();
   await scaffold(answers);
 
+  // Offer to chain straight into `start` so the curl|sh → init → on-air flow
+  // is one decision long. preferredEnv was just persisted by scaffold(), so
+  // runStartCommand() resolves the env silently — no second prompt. A no
+  // here is non-fatal: operators who want to inspect/tweak the .env before
+  // first boot fall through to pauseForEnter(); `subwave start` is the
+  // obvious next command and `subwave --help` lists everything else.
   console.log();
-  header('Next');
-  muted(`  subwave start            # bring the stack up at ${answers.home}`);
-  muted('  subwave setup            # configure Navidrome, LLM, TTS, DJ persona');
-  muted('  open http://localhost:7700/onboarding   # or finish setup in the browser');
+  const startNow = exitIfCancelled(await p.confirm({
+    message: 'Bring the stack up now?',
+    initialValue: true,
+  }), { backOnCancel: false });
+  if (startNow) {
+    await runStartCommand();
+    return;
+  }
   await pauseForEnter();
 }
 
@@ -168,6 +180,12 @@ async function scaffold(a: InitAnswers): Promise<void> {
   // SUBWAVE_HOME being set.
   writeHomeConfig({ home: a.home });
   ok('recorded install path in ~/.config/subwave/config.json');
+
+  // Persist the chosen deployment shape as preferredEnv so future
+  // `subwave start` invocations skip the env prompt — operators who chose
+  // prod here will never be asked again. (Dev isn't an init option; clones
+  // get inferred from the filesystem.)
+  saveConfig({ ...loadConfig(), preferredEnv: a.mode });
 
   // 5. If the operator let us generate a password, surface it now — once.
   // No persistence beyond the .env we just wrote.

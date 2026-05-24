@@ -185,6 +185,32 @@ export function webBaseFor(env: ComposeEnv): string {
   return 'http://localhost:7700';
 }
 
+// Infer the env from what's on disk under SUBWAVE_HOME. Used by `start` as
+// a silent fallback when there's no running stack and no persisted
+// preferredEnv to consult.
+//
+//   - Clone (has docker-compose.dev.yml AND a .git dir) → 'dev'. Both
+//     prod compose files also live in a clone, but only the dev file is
+//     unique to it (an `init` install never writes docker-compose.dev.yml).
+//     The .git check guards against an operator who hand-dropped the dev
+//     compose into a standalone home.
+//   - Only docker-compose.yml present → 'prod'.
+//   - Only docker-compose.byo.yml present → 'prod-byo'.
+//   - Anything else (no files, or prod + byo with no dev — the standalone
+//     install shape, which is ambiguous between the two prods) → null.
+export function inferEnvFromFilesystem(): Exclude<ComposeEnv, 'down'> | null {
+  const home = getSubwaveHome();
+  const hasDev = existsSync(resolve(home, 'docker-compose.dev.yml'));
+  const hasProd = existsSync(resolve(home, 'docker-compose.yml'));
+  const hasByo = existsSync(resolve(home, 'docker-compose.byo.yml'));
+  const isClone = hasDev && existsSync(resolve(home, '.git'));
+
+  if (isClone) return 'dev';
+  if (hasProd && !hasByo) return 'prod';
+  if (hasByo && !hasProd) return 'prod-byo';
+  return null;
+}
+
 // All declared services for a compose file — used when the operator wants
 // to pick "any" service even if some aren't running.
 export function listDeclaredServices(file: ComposeFile): string[] {

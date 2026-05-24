@@ -1,18 +1,29 @@
-// `subwave start [dev|prod]` — bring the stack up.
+// `subwave start [dev|prod|prod-byo]` — bring the stack up.
 //
 // Behaviour:
 //   - If a stack is already running, refuse (use `subwave restart` / `stop` instead).
-//   - If the arg is given, use it; otherwise prompt dev vs prod (with the
-//     last choice remembered in CLI config).
-//   - Shell out to `docker compose up -d` (prod also builds, matching the
-//     existing setup.mjs behaviour).
+//   - Otherwise resolve the target env silently (no prompt) via this cascade:
+//       1. explicit positional arg
+//       2. cli.json:preferredEnv  (set by `init`, or by the previous `start`)
+//       3. filesystem heuristic   (clone → dev; single compose file → its env)
+//     and error out if undecidable (effectively unreachable — an init install
+//     hits step 2 and a clone hits step 3).
+//   - Shell out to `docker compose up -d` (dev builds locally; prod/prod-byo
+//     pull the published GHCR images).
 //   - Poll /health for up to 30 s and report when the stream comes on-air.
 
-import { getComposeFiles, detectCompose, webBaseFor, type ComposeEnv, type ComposeFile } from '../compose.ts';
+import {
+  getComposeFiles,
+  detectCompose,
+  inferEnvFromFilesystem,
+  webBaseFor,
+  type ComposeEnv,
+  type ComposeFile,
+} from '../compose.ts';
 import { composeUp } from '../docker.ts';
 import { waitForHealth } from '../api.ts';
 import { loadConfig, saveConfig } from '../config.ts';
-import { exitIfCancelled, ok, warn, err, info, muted, p, pc, pauseForEnter, header } from '../ui.ts';
+import { ok, warn, err, info, muted, p, pc, pauseForEnter, header } from '../ui.ts';
 import { maybeStartWebDev } from '../web-dev.ts';
 
 // Subset of ComposeEnv the operator can pick — excludes 'down' (no stack
@@ -33,7 +44,7 @@ export async function runStartCommand(opts: StartOpts = {}): Promise<void> {
     return;
   }
 
-  const target = await pickEnv(opts.envArg);
+  const target = resolveEnv(opts.envArg);
   if (!target) return;
 
   // Remember the operator's choice so future no-arg invocations default to it.
@@ -103,8 +114,17 @@ export async function runStartCommand(opts: StartOpts = {}): Promise<void> {
   await pauseForEnter();
 }
 
-async function pickEnv(arg?: StartableEnv): Promise<ComposeFile | null> {
-  // Honour the explicit arg first.
+// Resolve the env to start, silently. Cascade:
+//   1. Explicit positional arg (`subwave start dev|prod|prod-byo`).
+//   2. cli.json:preferredEnv — set either by `init` at install time or by
+//      the previous `start` invocation (see save block above).
+//   3. Filesystem heuristic — clones map to dev, single-prod-file installs
+//      map to that prod variant. See inferEnvFromFilesystem().
+// If none of the three decide, we error out with a clear pointer rather
+// than falling back to an interactive prompt — that branch is effectively
+// unreachable in practice (init writes preferredEnv, clones hit step 3).
+function resolveEnv(arg?: StartableEnv): ComposeFile | null {
+  // 1. Explicit arg wins.
   if (arg) {
     const match = getComposeFiles().find((f) => f.env === arg);
     if (!match) {
@@ -114,27 +134,21 @@ async function pickEnv(arg?: StartableEnv): Promise<ComposeFile | null> {
     return match;
   }
 
+  // 2. Persisted preference.
   const cfg = loadConfig();
-  const choice = exitIfCancelled(await p.select<StartableEnv>({
-    message: 'Which environment?',
-    initialValue: cfg.preferredEnv ?? 'dev',
-    options: [
-      {
-        value: 'dev',
-        label: 'dev',
-        hint: 'docker-compose.dev.yml · controller :7701 · web dev separately on :7700',
-      },
-      {
-        value: 'prod',
-        label: 'prod',
-        hint: 'docker-compose.yml · Caddy on :7700 · web baked into image',
-      },
-      {
-        value: 'prod-byo',
-        label: 'prod (BYO proxy)',
-        hint: 'docker-compose.byo.yml · web :7700 · controller :7701 · icecast :7702',
-      },
-    ],
-  }));
-  return getComposeFiles().find((f) => f.env === choice) ?? null;
+  if (cfg.preferredEnv) {
+    const match = getComposeFiles().find((f) => f.env === cfg.preferredEnv);
+    if (match) return match;
+  }
+
+  // 3. Filesystem heuristic.
+  const inferred = inferEnvFromFilesystem();
+  if (inferred) {
+    const match = getComposeFiles().find((f) => f.env === inferred);
+    if (match) return match;
+  }
+
+  err('could not resolve env from install state');
+  muted('→ pass `subwave start dev|prod|prod-byo` explicitly, or run `subwave init` to scaffold a fresh install.');
+  return null;
 }

@@ -154,6 +154,27 @@ if ! command -v "$BIN_NAME" >/dev/null 2>&1; then
   echo
 fi
 
+# Offer to chain straight into `subwave init` when running interactively.
+# Piping `curl | sh` leaves stdin attached to the curl pipe (not a TTY), so
+# Clack would crash on first prompt. The fix is the rustup-style </dev/tty
+# re-exec: we run the binary as a TTY-attached process so init's prompts
+# work. exec replaces this shell so Ctrl-C in init exits cleanly without
+# falling back through the installer. Non-interactive callers (CI, Docker
+# builds, anything without /dev/tty) skip the prompt and see the original
+# Next: hint below.
+if [ -t 1 ] && [ -r /dev/tty ]; then
+  printf '\nRun `%s init` now to scaffold the install? [Y/n] ' "$BIN_NAME"
+  reply=""
+  read -r reply </dev/tty || reply=""
+  case "${reply:-y}" in
+    y|Y|yes|YES)
+      echo
+      exec "$INSTALL_DIR/$BIN_NAME" init </dev/tty
+      ;;
+  esac
+  echo
+fi
+
 echo "Next:"
 echo "  $BIN_NAME init           # scaffold a fresh install at ~/subwave"
 echo "  $BIN_NAME setup          # configure Navidrome, LLM, TTS, DJ"
