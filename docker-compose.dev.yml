@@ -18,7 +18,14 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.broadcast
-    platform: linux/amd64
+    # No `platform:` pin in dev. On Apple Silicon, forcing linux/amd64 routes
+    # liquidsoap through Rosetta/QEMU emulation where its clock_nanosleep
+    # syscall fails with `Unix.Unix_error(EUNKNOWNERR 0, "", "")` — the
+    # clock loop dies on every boot and Icecast ends up with no source.
+    # The savonet/liquidsoap:v2.2.5 base is multi-arch, so building natively
+    # (arm64 on M-series Macs, amd64 on Linux dev hosts) just works. Prod
+    # composes still pin amd64 because the GHCR-published images are amd64
+    # only for now.
     container_name: sub-wave-broadcast
     restart: unless-stopped
     ports:
@@ -67,6 +74,10 @@ services:
       - TZ=${TZ:-Europe/London}
       - STATE_DIR=/var/sub-wave
       - SOUNDS_DIR=/sounds
+      # Optional sidecar for Chatterbox + PocketTTS. Gated by --profile tts-heavy
+      # below; unreachable URL → fall back to Piper. Dev usage:
+      #   docker compose -f docker-compose.dev.yml --profile tts-heavy up -d
+      - TTS_HEAVY_URL=${TTS_HEAVY_URL:-http://tts-heavy:8080}
     ports:
       - "7701:7701"
     env_file:
@@ -91,3 +102,25 @@ services:
       # /app/node_modules with the (possibly empty) host node_modules.
       - ./controller/src:/app/src
       - ./controller/scripts:/app/scripts
+
+  # -------------------------------------------------------------------------
+  # TTS-HEAVY (optional) — sidecar for Chatterbox + PocketTTS
+  # -------------------------------------------------------------------------
+  # NOT started by default. Enable with:
+  #   docker compose -f docker-compose.dev.yml --profile tts-heavy up -d
+  # See docker/Dockerfile.tts-heavy + docker/tts-heavy/server.py. First build
+  # downloads ~3-4GB of model weights from Hugging Face — be patient.
+  tts-heavy:
+    image: ghcr.io/perminder-klair/subwave-tts-heavy:${SUBWAVE_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.tts-heavy
+    platform: linux/amd64
+    container_name: sub-wave-tts-heavy
+    restart: unless-stopped
+    profiles: ["tts-heavy"]
+    environment:
+      - TTS_HEAVY_DEVICE=${TTS_HEAVY_DEVICE:-cpu}
+      - POCKET_TTS_VOICE=${POCKET_TTS_VOICE:-alba}
+    volumes:
+      - *state-mount

@@ -21,6 +21,7 @@ const SECTIONS = [
   { id: 'tts',      label: 'TTS voice', hint: 'default engine' },
   { id: 'llm',      label: 'LLM provider', hint: 'model routing' },
   { id: 'search',   label: 'Web search', hint: 'live-facts backend' },
+  { id: 'library',  label: 'Library tagger', hint: 'embedding · propagation' },
   { id: 'station',  label: 'Station', hint: 'name · location' },
   { id: 'jingles',  label: 'Jingles', hint: 'stingers' },
   { id: 'sfx',      label: 'Sound FX', hint: 'agent stingers' },
@@ -80,6 +81,7 @@ interface TtsForm {
   defaultEngine: string;
   kokoro: { voice: string };
   chatterbox: { referenceVoice: string };
+  pocketTts: { voice: string };
   cloud: CloudTtsCfg;
 }
 
@@ -96,6 +98,23 @@ interface LlmForm {
 interface SearchForm {
   provider: string;
   apiKey: string;
+}
+
+interface EmbeddingEnrichmentForm {
+  lastfmTags: boolean;
+  lyrics: boolean;
+}
+
+interface EmbeddingForm {
+  enabled: boolean;
+  provider: string;          // empty → follow llm.provider
+  model: string;             // empty → sensible default per provider
+  seedCount: string;         // '0' = auto
+  knnNeighbours: string;
+  moodVoteThreshold: string;
+  confidenceThreshold: string;
+  maxActiveLearningRounds: string;
+  enrichment: EmbeddingEnrichmentForm;
 }
 
 interface ScrobbleLastfmForm {
@@ -135,6 +154,7 @@ interface FormState {
   tts: TtsForm;
   llm: LlmForm;
   search: SearchForm;
+  embedding: EmbeddingForm;
   scrobble: ScrobbleForm;
 }
 
@@ -170,10 +190,22 @@ interface SettingsData {
       defaultEngine?: string;
       kokoro?: { voice?: string };
       chatterbox?: { referenceVoice?: string };
+      pocketTts?: { voice?: string };
       cloud?: Partial<CloudTtsCfg>;
     };
     llm?: Partial<LlmForm>;
     search?: Partial<SearchForm>;
+    embedding?: {
+      enabled?: boolean;
+      provider?: string;
+      model?: string;
+      seedCount?: number;
+      knnNeighbours?: number;
+      moodVoteThreshold?: number;
+      confidenceThreshold?: number;
+      maxActiveLearningRounds?: number;
+      enrichment?: Partial<EmbeddingEnrichmentForm>;
+    };
     sfx?: { enabled?: boolean };
     scrobble?: {
       lastfm?: Partial<ScrobbleLastfmForm>;
@@ -186,6 +218,7 @@ interface SettingsData {
     kokoroVoices?: Array<{ id: string; label: string }>;
     chatterboxVoices?: string[];
     chatterboxVoiceDir?: string;
+    pocketTtsVoices?: Array<{ id: string; label: string }>;
     cloudProviders?: string[];
   };
   llm?: {
@@ -199,6 +232,7 @@ interface SettingsData {
     search?: Partial<SearchForm>;
   };
   jingles?: JingleEntry[];
+  libraryStats?: { total?: number };
   env?: Record<string, unknown>;
   streamOnAir?: boolean;
 }
@@ -266,6 +300,7 @@ export default function SettingsPanel() {
         defaultEngine: v.tts?.defaultEngine ?? 'piper',
         kokoro: { voice: v.tts?.kokoro?.voice ?? 'bf_isabella' },
         chatterbox: { referenceVoice: v.tts?.chatterbox?.referenceVoice ?? '' },
+        pocketTts: { voice: v.tts?.pocketTts?.voice ?? 'alba' },
         cloud: {
           enabled: v.tts?.cloud?.enabled ?? false,
           provider: v.tts?.cloud?.provider ?? 'openai',
@@ -288,6 +323,20 @@ export default function SettingsPanel() {
         // GET /settings returns the apiKey redacted to 'set' | '' — that
         // round-trips through POST harmlessly (settings.update ignores 'set').
         apiKey: v.search?.apiKey ?? '',
+      },
+      embedding: {
+        enabled: v.embedding?.enabled ?? true,
+        provider: v.embedding?.provider ?? '',
+        model: v.embedding?.model ?? '',
+        seedCount: String(v.embedding?.seedCount ?? 0),
+        knnNeighbours: String(v.embedding?.knnNeighbours ?? 5),
+        moodVoteThreshold: String(v.embedding?.moodVoteThreshold ?? 0.6),
+        confidenceThreshold: String(v.embedding?.confidenceThreshold ?? 0.6),
+        maxActiveLearningRounds: String(v.embedding?.maxActiveLearningRounds ?? 3),
+        enrichment: {
+          lastfmTags: v.embedding?.enrichment?.lastfmTags ?? false,
+          lyrics: v.embedding?.enrichment?.lyrics ?? true,
+        },
       },
       scrobble: {
         lastfm: {
@@ -497,6 +546,12 @@ export default function SettingsPanel() {
             )}
             {activeSection === 'search' && (
               <SearchSection
+                data={data} form={form} setForm={updateForm} busy={busy}
+                saveSettings={saveSettings}
+              />
+            )}
+            {activeSection === 'library' && (
+              <LibrarySection
                 data={data} form={form} setForm={updateForm} busy={busy}
                 saveSettings={saveSettings}
               />
@@ -867,7 +922,7 @@ const CB_DEFAULT_VOICE = '__cb_default__';
 function TtsSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
   const engines = data.tts?.engines || ['piper'];
   const available = data.tts?.available || {};
-  const ENGINE_LABELS: Record<string, string> = { piper: 'Piper', kokoro: 'Kokoro', chatterbox: 'Chatterbox', cloud: 'Cloud' };
+  const ENGINE_LABELS: Record<string, string> = { piper: 'Piper', kokoro: 'Kokoro', chatterbox: 'Chatterbox', 'pocket-tts': 'PocketTTS', cloud: 'Cloud' };
   const engineOptions = engines.map(e => ({ id: e, label: ENGINE_LABELS[e] || e }));
 
   const save = () => saveSettings({
@@ -875,6 +930,7 @@ function TtsSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
       defaultEngine: form.tts.defaultEngine,
       kokoro: { voice: form.tts.kokoro?.voice },
       chatterbox: { referenceVoice: form.tts.chatterbox?.referenceVoice ?? '' },
+      pocketTts: { voice: form.tts.pocketTts?.voice ?? 'alba' },
       cloud: {
         enabled: true,
         provider: form.tts.cloud.provider,
@@ -908,6 +964,7 @@ function TtsSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
   const savedEngine: string = savedTts.defaultEngine || 'piper';
   const savedKokoroVoice: string = savedTts.kokoro?.voice || '';
   const savedChatterboxVoice: string = savedTts.chatterbox?.referenceVoice || '';
+  const savedPocketTtsVoice: string = savedTts.pocketTts?.voice || '';
   const savedCloud: any = savedTts.cloud || {};
   const savedEngineLabel = ENGINE_LABELS[savedEngine] || savedEngine;
   const formEngineLabel = ENGINE_LABELS[form.tts.defaultEngine] || form.tts.defaultEngine;
@@ -916,6 +973,7 @@ function TtsSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
     form.tts.defaultEngine !== savedEngine
     || (form.tts.kokoro?.voice || '') !== savedKokoroVoice
     || (form.tts.chatterbox?.referenceVoice || '') !== savedChatterboxVoice
+    || (form.tts.pocketTts?.voice || '') !== savedPocketTtsVoice
     || form.tts.cloud.provider !== (savedCloud.provider || '')
     || (form.tts.cloud.model || '').trim() !== (savedCloud.model || '').trim()
     || (form.tts.cloud.voice || '').trim() !== (savedCloud.voice || '').trim()
@@ -929,6 +987,10 @@ function TtsSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
   } else if (savedEngine === 'chatterbox') {
     activeDetail = <>
       Reference <code>{savedChatterboxVoice || 'built-in'}</code> — voice cloning + paralinguistic tags. Falls back to Piper if the worker isn’t installed.
+    </>;
+  } else if (savedEngine === 'pocket-tts') {
+    activeDetail = <>
+      Voice <code>{savedPocketTtsVoice || 'alba'}</code> — CPU-only, ~6× real-time, multilingual built-in voices. Falls back to Piper if the worker isn’t installed.
     </>;
   } else if (savedEngine === 'cloud') {
     activeDetail = <>
@@ -1039,9 +1101,13 @@ function TtsSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
             <Label>Chatterbox reference voice</Label>
             {available.chatterbox === false ? (
               <div className="field-hint text-[var(--danger)]">
-                Chatterbox isn’t bundled in this controller image. Rebuild it with{' '}
-                <code>--build-arg WITH_CHATTERBOX=1</code> to include the runtime and
-                model, then recreate the controller. Until then this engine falls back to Piper.
+                Chatterbox isn’t currently available — it lives in the optional{' '}
+                <code>tts-heavy</code> sidecar. Start it with{' '}
+                <code>docker compose --profile tts-heavy up -d</code>, or set{' '}
+                <code>COMPOSE_PROFILES=tts-heavy</code> in your <code>.env</code> so it
+                comes up automatically with the rest of the stack. (Legacy path: rebuild
+                the controller image with <code>--build-arg WITH_CHATTERBOX=1</code>.)
+                Until then this engine falls back to Piper.
               </div>
             ) : (data.tts?.chatterboxVoices?.length || 0) > 0 ? (
               <>
@@ -1076,6 +1142,48 @@ function TtsSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
                 The engine will use its built-in default voice. Drop a 5-second WAV into
                 that directory to enable cloning.
               </div>
+            )}
+          </div>
+        )}
+
+        {form.tts.defaultEngine === 'pocket-tts' && (
+          <div className="field mt-4">
+            <Label>PocketTTS voice</Label>
+            {available['pocket-tts'] === false ? (
+              <div className="field-hint text-[var(--danger)]">
+                PocketTTS isn’t currently available — it lives in the same optional{' '}
+                <code>tts-heavy</code> sidecar as Chatterbox. Start it with{' '}
+                <code>docker compose --profile tts-heavy up -d</code>, or set{' '}
+                <code>COMPOSE_PROFILES=tts-heavy</code> in your <code>.env</code> so it
+                comes up automatically with the rest of the stack. (Legacy path: rebuild
+                the controller image with <code>--build-arg WITH_POCKETTTS=1</code>.)
+                Until then this engine falls back to Piper.
+              </div>
+            ) : (data.tts?.pocketTtsVoices?.length || 0) > 0 ? (
+              <>
+                <Select
+                  value={form.tts.pocketTts?.voice ?? 'alba'}
+                  onValueChange={val => setForm(f => ({
+                    ...f, tts: { ...f.tts, pocketTts: { ...f.tts.pocketTts, voice: val } },
+                  }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {data.tts?.pocketTtsVoices?.map(v => (
+                        <SelectItem key={v.id} value={v.id}>{v.label} — {v.id}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <div className="field-hint">
+                  100M-param CPU-only model from kyutai-labs. Voices speak English, French,
+                  German, Italian, Spanish and Portuguese. Personas can override this on
+                  the Personas page.
+                </div>
+              </>
+            ) : (
+              <div className="field-hint">This build reports no PocketTTS voices.</div>
             )}
           </div>
         )}
@@ -1572,6 +1680,338 @@ function SearchSection({ data, form, setForm, busy, saveSettings }: SectionProps
         busy={busy}
         onSave={save}
         saveLabel="Save web search"
+      />
+    </>
+  );
+}
+
+/* ── Library tagger ──────────────────────────────────────────────────── */
+
+function LibrarySection({ data, form, setForm, busy, saveSettings }: SectionProps) {
+  const e = form.embedding;
+  const save = () => saveSettings({
+    embedding: {
+      enabled: e.enabled,
+      provider: e.provider,
+      model: e.model,
+      seedCount: parseInt(e.seedCount, 10) || 0,
+      knnNeighbours: parseInt(e.knnNeighbours, 10) || 5,
+      moodVoteThreshold: parseFloat(e.moodVoteThreshold) || 0.6,
+      confidenceThreshold: parseFloat(e.confidenceThreshold) || 0.6,
+      maxActiveLearningRounds: parseInt(e.maxActiveLearningRounds, 10) || 0,
+      enrichment: {
+        lastfmTags: e.enrichment.lastfmTags,
+        lyrics: e.enrichment.lyrics,
+      },
+    },
+  });
+
+  const savedEmbedding = data.values?.embedding || {};
+  const llmProvider = data.values?.llm?.provider || 'ollama';
+  const effectiveProvider = e.provider || llmProvider;
+
+  // Provider list comes from /settings.llm.providers (the canonical LLM list).
+  // Anthropic has no first-party embedding API — flagged in the hint.
+  const providers = data.llm?.providers || ['ollama'];
+
+  return (
+    <>
+      <SectionHeader
+        eyebrow="library tagger"
+        title="Embedding-propagated mood tagging."
+        sub={<>
+          The tagger embeds every track once, LLM-tags a small representative
+          seed set, then KNN-propagates moods + energy to the rest. Cuts LLM
+          call count ~10× vs. brute-force per-track tagging. Tune below;
+          changes apply the next time the bulk tagger runs.
+        </>}
+        metrics={[
+          {
+            n: String(data.libraryStats?.total ?? '—'),
+            l: 'tagged',
+          },
+        ]}
+      />
+
+      <Card title="Tagger" sub="enabled?">
+        <div className="grid grid-cols-[1fr_auto] items-center gap-4">
+          <div>
+            <div className="text-[13px] font-bold">Embedding-propagated tagging</div>
+            <div className="mt-0.5 max-w-[480px] text-[11px] leading-[1.5] text-muted">
+              When off, the bulk tagger refuses to start. Single-track retags
+              from the Library admin page still work (they bypass the
+              embedding pipeline).
+            </div>
+          </div>
+          <Seg
+            accent
+            value={e.enabled ? 'on' : 'off'}
+            options={[
+              { id: 'off', label: 'Off' },
+              { id: 'on', label: 'On' },
+            ]}
+            onChange={v =>
+              setForm(f => ({ ...f, embedding: { ...f.embedding, enabled: v === 'on' } }))
+            }
+          />
+        </div>
+      </Card>
+
+      <Card title="Embedding provider" sub="vector model">
+        <div className="grid gap-[18px]">
+          <div className="field">
+            <Label>Provider</Label>
+            <Select
+              value={e.provider || '__follow__'}
+              onValueChange={v =>
+                setForm(f => ({
+                  ...f,
+                  embedding: { ...f.embedding, provider: v === '__follow__' ? '' : v },
+                }))
+              }
+            >
+              <SelectTrigger className="max-w-[360px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="__follow__">
+                    Follow LLM provider — {llmProviderLabel(llmProvider)}
+                  </SelectItem>
+                  {providers.map(p => (
+                    <SelectItem key={p} value={p}>{llmProviderLabel(p)}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <div className="field-hint">
+              Where the text embeddings come from. Default follows your LLM
+              provider — Ollama-local users get <code>nomic-embed-text</code> free.
+              Anthropic has no first-party embedding API; if your LLM is Anthropic,
+              pick OpenAI here (needs <code>OPENAI_API_KEY</code>).
+              {' '}Effective: <code>{llmProviderLabel(effectiveProvider)}</code>.
+            </div>
+          </div>
+
+          <div className="field">
+            <Label>Model</Label>
+            <Input
+              value={e.model}
+              onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                setForm(f => ({ ...f, embedding: { ...f.embedding, model: ev.target.value } }))
+              }
+              placeholder={
+                effectiveProvider === 'ollama'
+                  ? 'nomic-embed-text'
+                  : effectiveProvider === 'openai' || effectiveProvider === 'openai-compatible'
+                    ? 'text-embedding-3-small'
+                    : effectiveProvider === 'google'
+                      ? 'text-embedding-004'
+                      : 'model id'
+              }
+              className="max-w-[360px]"
+            />
+            <div className="field-hint">
+              Leave blank for the sensible default per provider. If you change
+              this on a tagged library, the next run will reject the new dim —
+              re-run with <code>--reseed</code> to drop existing vectors.
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Seed phase" sub="how many tracks to LLM-tag">
+        <div className="grid gap-[18px]">
+          <div className="field">
+            <Label>Seed count</Label>
+            <Input
+              type="number"
+              min={0}
+              max={50000}
+              value={e.seedCount}
+              onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                setForm(f => ({
+                  ...f,
+                  embedding: { ...f.embedding, seedCount: ev.target.value },
+                }))
+              }
+              className="max-w-[180px]"
+            />
+            <div className="field-hint">
+              How many tracks the LLM tags by hand before propagation kicks in.
+              <code> 0</code> = auto: <code>max(200, ceil(sqrt(library)))</code>.
+              For a 5k library that&apos;s ~70; for 50k, ~220. CLI{' '}
+              <code>--seeds N</code> overrides this.
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Propagation" sub="KNN voting">
+        <div className="grid gap-[18px]">
+          <div className="field">
+            <Label>KNN neighbours</Label>
+            <Input
+              type="number"
+              min={1}
+              max={50}
+              value={e.knnNeighbours}
+              onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                setForm(f => ({
+                  ...f,
+                  embedding: { ...f.embedding, knnNeighbours: ev.target.value },
+                }))
+              }
+              className="max-w-[180px]"
+            />
+            <div className="field-hint">
+              How many nearest tagged neighbours vote on an untagged track&apos;s
+              moods + energy. 5 is the well-tuned default; higher values smooth
+              over noise but blur edge cases.
+            </div>
+          </div>
+
+          <div className="field">
+            <Label>Mood vote threshold</Label>
+            <Input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={e.moodVoteThreshold}
+              onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                setForm(f => ({
+                  ...f,
+                  embedding: { ...f.embedding, moodVoteThreshold: ev.target.value },
+                }))
+              }
+              className="max-w-[180px]"
+            />
+            <div className="field-hint">
+              Fraction of voting neighbours that must carry a mood for it to
+              propagate. <code>0.6</code> ≈ 3-out-of-5 with the default
+              neighbour count. Higher = stricter, fewer propagated tags;
+              lower = looser, more drift.
+            </div>
+          </div>
+
+          <div className="field">
+            <Label>Confidence threshold</Label>
+            <Input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={e.confidenceThreshold}
+              onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                setForm(f => ({
+                  ...f,
+                  embedding: { ...f.embedding, confidenceThreshold: ev.target.value },
+                }))
+              }
+              className="max-w-[180px]"
+            />
+            <div className="field-hint">
+              Minimum aggregate confidence (similarity × agreement) for a
+              propagated tag to be accepted. Below this, the track is queued
+              for LLM tagging instead.
+            </div>
+          </div>
+
+          <div className="field">
+            <Label>Active-learning rounds</Label>
+            <Input
+              type="number"
+              min={0}
+              max={10}
+              value={e.maxActiveLearningRounds}
+              onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                setForm(f => ({
+                  ...f,
+                  embedding: { ...f.embedding, maxActiveLearningRounds: ev.target.value },
+                }))
+              }
+              className="max-w-[180px]"
+            />
+            <div className="field-hint">
+              Max rounds of (LLM-tag the uncertain residual → re-propagate)
+              after the first propagation pass. <code>0</code> skips active
+              learning entirely. CLI <code>--max-rounds N</code> overrides
+              this.
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Enrichment" sub="signals folded into the embedding text">
+        <div className="grid gap-4">
+          <div className="grid grid-cols-[1fr_auto] items-center gap-4">
+            <div>
+              <div className="text-[13px] font-bold">Last.fm tags</div>
+              <div className="mt-0.5 max-w-[480px] text-[11px] leading-[1.5] text-muted">
+                Vanilla Navidrome&apos;s <code>getArtistInfo2</code> doesn&apos;t
+                surface crowd tags. Leave off unless you&apos;re running a
+                custom Navidrome that does — otherwise this just burns an HTTP
+                round trip per artist for nothing.
+              </div>
+            </div>
+            <Seg
+              accent
+              value={e.enrichment.lastfmTags ? 'on' : 'off'}
+              options={[
+                { id: 'off', label: 'Off' },
+                { id: 'on', label: 'On' },
+              ]}
+              onChange={v =>
+                setForm(f => ({
+                  ...f,
+                  embedding: {
+                    ...f.embedding,
+                    enrichment: { ...f.embedding.enrichment, lastfmTags: v === 'on' },
+                  },
+                }))
+              }
+            />
+          </div>
+
+          <div className="grid grid-cols-[1fr_auto] items-center gap-4">
+            <div>
+              <div className="text-[13px] font-bold">Lyrics</div>
+              <div className="mt-0.5 max-w-[480px] text-[11px] leading-[1.5] text-muted">
+                Fetch a short lyric excerpt per track and fold it into the
+                embedding text. Improves propagation quality on
+                lyrically-driven tracks (folk, hip-hop, singer-songwriter);
+                negligible effect on instrumentals.
+              </div>
+            </div>
+            <Seg
+              accent
+              value={e.enrichment.lyrics ? 'on' : 'off'}
+              options={[
+                { id: 'off', label: 'Off' },
+                { id: 'on', label: 'On' },
+              ]}
+              onChange={v =>
+                setForm(f => ({
+                  ...f,
+                  embedding: {
+                    ...f.embedding,
+                    enrichment: { ...f.embedding.enrichment, lyrics: v === 'on' },
+                  },
+                }))
+              }
+            />
+          </div>
+        </div>
+      </Card>
+
+      <SaveBar
+        note={`Saved values apply the next time the bulk tagger runs. Current run (if any) keeps its own snapshot.${
+          savedEmbedding.provider || savedEmbedding.model
+            ? ''
+            : ' Provider/model defaults follow the LLM section.'
+        }`}
+        busy={busy}
+        onSave={save}
+        saveLabel="Save library tagger"
       />
     </>
   );

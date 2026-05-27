@@ -9,6 +9,12 @@ import { randomBytes } from 'node:crypto';
 import { STATE_DIR } from './config.js';
 
 const SETTINGS_PATH = `${STATE_DIR}/settings.json`;
+// `shows` (reusable show definitions) and `schedule` (the 7×24 grid) live in
+// their own file so settings.json stays readable — a fresh schedule is 168
+// null cells. They're conceptually one feature (the show planner) and are
+// always loaded/saved together, so they share one file. On first load after
+// upgrade, load() migrates them out of settings.json into here.
+const SCHEDULE_PATH = `${STATE_DIR}/schedule.json`;
 
 // Default DJ system-prompt template. Placeholders are substituted at LLM
 // call time via renderDjPrompt(). Keep {name} mandatory — update() refuses
@@ -47,13 +53,14 @@ export const SCRIPT_LENGTHS = ['concise', 'extended'];
 // global defaultEngine.
 //
 // `cloud` routes through the AI SDK (OpenAI / ElevenLabs speech models) —
-// see llm/speech.js. `piper`, `kokoro`, and `chatterbox` are local engines.
-// Chatterbox is opt-in — the default controller image doesn't bundle it; build
-// the image with `--build-arg WITH_CHATTERBOX=1` (see docker/Dockerfile.controller)
-// to include the runtime. The dispatcher gates the engine on isAvailable() so
-// settings can reference it safely even when the runtime is absent (the engine
-// just falls back to Piper).
-export const TTS_ENGINES = ['piper', 'kokoro', 'chatterbox', 'cloud'];
+// see llm/speech.js. `piper`, `kokoro`, `chatterbox`, and `pocket-tts` are
+// local engines. Chatterbox and PocketTTS are opt-in — the default controller
+// image doesn't bundle either; build the image with `--build-arg WITH_CHATTERBOX=1`
+// or `--build-arg WITH_POCKETTTS=1` (see docker/Dockerfile.controller) to
+// include the runtime. The dispatcher gates each engine on isAvailable() so
+// settings can reference it safely even when the runtime is absent (the
+// engine just falls back to Piper).
+export const TTS_ENGINES = ['piper', 'kokoro', 'chatterbox', 'pocket-tts', 'cloud'];
 
 // LLM provider abstraction. `ollama` is the homelab default; the cloud
 // providers are opt-in and resolved by llm/provider.js. `openrouter` and
@@ -123,6 +130,23 @@ export const KOKORO_VOICES_BRITISH = [
 ];
 
 const KOKORO_VOICE_RE = /^[a-z]{2}_[a-z0-9]+$/;
+// PocketTTS built-in voices — the curated set the admin UI offers. The
+// underlying model also accepts a reference-WAV path for zero-shot cloning,
+// but the v1 wrapper sticks to built-ins (see controller/src/audio/pocketTts.ts).
+// Any voice matching POCKET_TTS_VOICE_RE still passes validation, so an
+// operator can override via POST with an unlisted id and the worker will
+// fall back to the default if the voice isn't recognised.
+export const POCKET_TTS_VOICES = [
+  { id: 'alba', label: 'Alba (EN, F)' },
+  { id: 'anna', label: 'Anna (EN, F)' },
+  { id: 'charles', label: 'Charles (EN, M)' },
+  { id: 'estelle', label: 'Estelle (FR, F)' },
+  { id: 'giovanni', label: 'Giovanni (IT, M)' },
+  { id: 'juergen', label: 'Juergen (DE, M)' },
+  { id: 'lola', label: 'Lola (ES, F)' },
+  { id: 'rafael', label: 'Rafael (PT, M)' },
+];
+const POCKET_TTS_VOICE_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 // Chatterbox voices are reference-WAV filenames living in
 // config.chatterbox.voiceDir. Loose check — basename only, no path
 // separators, conservative character set, ends in .wav. Empty is also
@@ -149,6 +173,13 @@ const WEBHOOK_EVENTS = [
 ];
 
 // Server-minted opaque id, e.g. mintId('p_') -> 'p_a1b2c3'.
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
 function mintId(prefix) {
   return prefix + randomBytes(3).toString('hex');
 }
@@ -229,11 +260,22 @@ const DEFAULTS = {
   schedule: emptyWeek(),
   tts: {
     defaultEngine: 'piper',
+    // Advisory flag — does the operator intend to run the optional tts-heavy
+    // sidecar (Chatterbox + PocketTTS)? Both setup wizards (CLI + /onboarding)
+    // write to this so each surface knows the other's choice. Nothing in the
+    // controller branches on it — engine availability is still read from
+    // chatterbox.isAvailable() / pocketTts.isAvailable() at call time, which
+    // is the source of truth. This is purely for the UI to show consistent
+    // state and for the CLI to know whether to write COMPOSE_PROFILES.
+    heavyEnabled: false,
     kokoro: { voice: 'bf_isabella' },
     // Global Chatterbox fallback — used as the reference voice when the
     // engine resolves to chatterbox but no persona-level voice is set.
     // Empty filename means "use the model's built-in default voice".
     chatterbox: { referenceVoice: '' },
+    // Global PocketTTS default voice — used when the engine resolves to
+    // pocket-tts but no persona-level voice is set. Built-in voice id.
+    pocketTts: { voice: 'alba' },
     // Cloud engine config — used when an engine resolves to 'cloud'. A persona
     // chooses provider+voice; `model` and `apiKey` stay shared here. `apiKey`
     // empty means "read the provider's env var" (OPENAI_API_KEY etc.).
@@ -278,6 +320,36 @@ const DEFAULTS = {
     // reports zero listeners — the stream coasts on the auto playlist — and
     // resume as soon as someone tunes in. Off by default.
     pauseWhenEmpty: false,
+  },
+  // Embedding-propagated library tagger (music/tag-library.ts).
+  //
+  // The tagger embeds every track's metadata text once (free if Ollama-local,
+  // ~$1 for 50k via OpenAI), LLM-tags a small representative seed set, then
+  // KNN-propagates moods/energy to the rest. Cuts LLM call count ~10x vs.
+  // brute-force batched tagging.
+  //
+  // `provider` and `model` default to following settings.llm; set them here
+  // to use a different provider for embeddings than for chat. Anthropic has
+  // no first-party embedding API — Anthropic users either set a different
+  // embedding provider or set OPENAI_API_KEY for the embedding leg.
+  embedding: {
+    enabled: true,
+    provider: '',         // empty → follow settings.llm.provider
+    model: '',            // empty → sensible default per provider
+    seedCount: 0,         // 0 → auto max(200, ceil(sqrt(library)))
+    knnNeighbours: 5,
+    moodVoteThreshold: 0.6,
+    confidenceThreshold: 0.6,
+    maxActiveLearningRounds: 3,
+    enrichment: {
+      // Vanilla Navidrome's getArtistInfo2 doesn't surface Last.fm crowd
+      // tags (the agent only exposes bio + images). Until SUB/WAVE adds a
+      // direct Last.fm API path, leave this off — enabling it just wastes
+      // an HTTP round trip per artist with empty results. Operators
+      // running a custom Navidrome that does expose tag[] can flip it on.
+      lastfmTags: false,
+      lyrics: true,       // fetch + include lyric excerpt in embed text
+    },
   },
   // Web-search backend for the segment director's web-search capability.
   // Default `duckduckgo` works out of the box with no key; `tavily` reads its
@@ -372,6 +444,10 @@ function normalizeTts(raw: any) {
   // Empty is legitimate ("use built-in default"), invalid filenames get reset
   // to empty rather than rewritten to a Kokoro id.
   if (engine === 'chatterbox' && voice && !CHATTERBOX_VOICE_RE.test(voice)) voice = '';
+  // PocketTTS uses plain built-in voice ids (alba, anna, …). Invalid or
+  // missing values reset to the default — the worker also guards against
+  // unknown ids, but normalising here keeps the persisted form clean.
+  if (engine === 'pocket-tts' && (!voice || !POCKET_TTS_VOICE_RE.test(voice))) voice = 'alba';
   // openai-compatible voices are server-specific (often arbitrary cloning ref
   // names) — no canonical default; leave empty so generateSpeech omits the
   // field and the server picks its own.
@@ -460,6 +536,23 @@ export async function load() {
     } catch {}
   }
 
+  // shows + schedule live in schedule.json. Migration: if schedule.json
+  // exists, its contents win (and any leftover keys on settings.json are
+  // ignored, to be stripped on the next write). If it doesn't exist, fall
+  // back to whatever's on `stored` (legacy in-line copy from a pre-split
+  // install) so normalizers below can promote it forward. update() always
+  // writes settings.json without these keys, so the next save completes the
+  // migration on disk.
+  if (existsSync(SCHEDULE_PATH)) {
+    try {
+      const sched = JSON.parse(await readFile(SCHEDULE_PATH, 'utf8'));
+      if (sched && typeof sched === 'object') {
+        stored.shows = sched.shows;
+        stored.schedule = sched.schedule;
+      }
+    } catch {}
+  }
+
   // ── personas ──────────────────────────────────────────────────────────────
   // No valid persona roster in settings.json (fresh install) → ship the seed
   // roster of three distinct DJs.
@@ -520,6 +613,12 @@ export async function load() {
       defaultEngine: TTS_ENGINES.includes(stored.tts?.defaultEngine)
         ? stored.tts.defaultEngine
         : DEFAULTS.tts.defaultEngine,
+      // Stored as a plain boolean; coerce missing/non-boolean (older saves) to
+      // the default. See DEFAULTS.tts.heavyEnabled for the semantics.
+      heavyEnabled:
+        typeof stored.tts?.heavyEnabled === 'boolean'
+          ? stored.tts.heavyEnabled
+          : DEFAULTS.tts.heavyEnabled,
       kokoro: {
         voice:
           typeof stored.tts?.kokoro?.voice === 'string' &&
@@ -534,6 +633,13 @@ export async function load() {
             CHATTERBOX_VOICE_RE.test(stored.tts.chatterbox.referenceVoice))
             ? stored.tts.chatterbox.referenceVoice
             : DEFAULTS.tts.chatterbox.referenceVoice,
+      },
+      pocketTts: {
+        voice:
+          typeof stored.tts?.pocketTts?.voice === 'string' &&
+          POCKET_TTS_VOICE_RE.test(stored.tts.pocketTts.voice)
+            ? stored.tts.pocketTts.voice
+            : DEFAULTS.tts.pocketTts.voice,
       },
       cloud: {
         // Explicit boolean wins; otherwise an install that already had a saved
@@ -588,6 +694,51 @@ export async function load() {
         ? stored.search.provider
         : DEFAULTS.search.provider,
       apiKey: typeof stored.search?.apiKey === 'string' ? stored.search.apiKey : '',
+    },
+    embedding: {
+      enabled:
+        typeof stored.embedding?.enabled === 'boolean'
+          ? stored.embedding.enabled
+          : DEFAULTS.embedding.enabled,
+      provider:
+        typeof stored.embedding?.provider === 'string'
+          ? stored.embedding.provider.trim()
+          : DEFAULTS.embedding.provider,
+      model:
+        typeof stored.embedding?.model === 'string'
+          ? stored.embedding.model.trim()
+          : DEFAULTS.embedding.model,
+      seedCount:
+        Number.isFinite(stored.embedding?.seedCount) && stored.embedding.seedCount >= 0
+          ? Math.floor(stored.embedding.seedCount)
+          : DEFAULTS.embedding.seedCount,
+      knnNeighbours:
+        Number.isFinite(stored.embedding?.knnNeighbours) && stored.embedding.knnNeighbours >= 1
+          ? Math.floor(stored.embedding.knnNeighbours)
+          : DEFAULTS.embedding.knnNeighbours,
+      moodVoteThreshold:
+        Number.isFinite(stored.embedding?.moodVoteThreshold)
+          ? clamp01(stored.embedding.moodVoteThreshold)
+          : DEFAULTS.embedding.moodVoteThreshold,
+      confidenceThreshold:
+        Number.isFinite(stored.embedding?.confidenceThreshold)
+          ? clamp01(stored.embedding.confidenceThreshold)
+          : DEFAULTS.embedding.confidenceThreshold,
+      maxActiveLearningRounds:
+        Number.isFinite(stored.embedding?.maxActiveLearningRounds)
+        && stored.embedding.maxActiveLearningRounds >= 0
+          ? Math.floor(stored.embedding.maxActiveLearningRounds)
+          : DEFAULTS.embedding.maxActiveLearningRounds,
+      enrichment: {
+        lastfmTags:
+          typeof stored.embedding?.enrichment?.lastfmTags === 'boolean'
+            ? stored.embedding.enrichment.lastfmTags
+            : DEFAULTS.embedding.enrichment.lastfmTags,
+        lyrics:
+          typeof stored.embedding?.enrichment?.lyrics === 'boolean'
+            ? stored.embedding.enrichment.lyrics
+            : DEFAULTS.embedding.enrichment.lyrics,
+      },
     },
     skills: {
       enabled: Object.fromEntries(
@@ -729,6 +880,16 @@ function validateTtsBlock(raw, where) {
     if (voice && !CHATTERBOX_VOICE_RE.test(voice)) {
       throw new Error(
         `${where}.tts.voice for chatterbox must be a .wav filename (no path), or empty for the default voice`,
+      );
+    }
+  } else if (t.engine === 'pocket-tts') {
+    // Built-in voice id — alba, anna, charles, … Curated set lives in
+    // POCKET_TTS_VOICES; anything else passing the regex is also accepted
+    // (the worker falls back to the default for unknown ids).
+    if (!voice) voice = 'alba';
+    if (!POCKET_TTS_VOICE_RE.test(voice)) {
+      throw new Error(
+        `${where}.tts.voice for pocket-tts must be a built-in voice id (lowercase, e.g. alba)`,
       );
     }
   } else if (t.engine === 'cloud') {
@@ -1034,6 +1195,12 @@ export async function update(patch) {
       }
       next.tts.defaultEngine = t.defaultEngine;
     }
+    if (t.heavyEnabled !== undefined) {
+      if (typeof t.heavyEnabled !== 'boolean') {
+        throw new Error('tts.heavyEnabled must be a boolean');
+      }
+      next.tts.heavyEnabled = t.heavyEnabled;
+    }
     if (t.kokoro !== undefined) {
       const k = t.kokoro || {};
       if (k.voice !== undefined) {
@@ -1054,6 +1221,18 @@ export async function update(patch) {
           );
         }
         next.tts.chatterbox.referenceVoice = v;
+      }
+    }
+    if (t.pocketTts !== undefined) {
+      const pt = t.pocketTts || {};
+      if (pt.voice !== undefined) {
+        const v = String(pt.voice).trim();
+        if (!POCKET_TTS_VOICE_RE.test(v)) {
+          throw new Error(
+            'tts.pocketTts.voice must be a built-in voice id (lowercase, e.g. alba)',
+          );
+        }
+        next.tts.pocketTts.voice = v;
       }
     }
     if (t.cloud !== undefined) {
@@ -1170,6 +1349,69 @@ export async function update(patch) {
       next.search.apiKey = v;
     }
   }
+  if ('embedding' in patch) {
+    const e = patch.embedding || {};
+    if (e.enabled !== undefined) next.embedding.enabled = !!e.enabled;
+    if (e.provider !== undefined) {
+      const v = String(e.provider).trim();
+      // Empty string is meaningful — it means "follow settings.llm.provider".
+      if (v && !LLM_PROVIDERS.includes(v)) {
+        throw new Error(
+          `embedding.provider must be empty or one of: ${LLM_PROVIDERS.join(', ')}`,
+        );
+      }
+      next.embedding.provider = v;
+    }
+    if (e.model !== undefined) {
+      const v = String(e.model).trim();
+      if (v.length > 100) throw new Error('embedding.model must be 0-100 chars');
+      next.embedding.model = v;
+    }
+    if (e.seedCount !== undefined) {
+      const v = parseInt(e.seedCount, 10);
+      if (!Number.isFinite(v) || v < 0 || v > 50_000) {
+        throw new Error('embedding.seedCount must be an integer 0-50000 (0 = auto)');
+      }
+      next.embedding.seedCount = v;
+    }
+    if (e.knnNeighbours !== undefined) {
+      const v = parseInt(e.knnNeighbours, 10);
+      if (!Number.isFinite(v) || v < 1 || v > 50) {
+        throw new Error('embedding.knnNeighbours must be an integer 1-50');
+      }
+      next.embedding.knnNeighbours = v;
+    }
+    if (e.moodVoteThreshold !== undefined) {
+      const v = parseFloat(e.moodVoteThreshold);
+      if (!Number.isFinite(v) || v < 0 || v > 1) {
+        throw new Error('embedding.moodVoteThreshold must be between 0 and 1');
+      }
+      next.embedding.moodVoteThreshold = v;
+    }
+    if (e.confidenceThreshold !== undefined) {
+      const v = parseFloat(e.confidenceThreshold);
+      if (!Number.isFinite(v) || v < 0 || v > 1) {
+        throw new Error('embedding.confidenceThreshold must be between 0 and 1');
+      }
+      next.embedding.confidenceThreshold = v;
+    }
+    if (e.maxActiveLearningRounds !== undefined) {
+      const v = parseInt(e.maxActiveLearningRounds, 10);
+      if (!Number.isFinite(v) || v < 0 || v > 10) {
+        throw new Error('embedding.maxActiveLearningRounds must be an integer 0-10');
+      }
+      next.embedding.maxActiveLearningRounds = v;
+    }
+    if (e.enrichment !== undefined) {
+      const en = e.enrichment || {};
+      if (en.lastfmTags !== undefined) {
+        next.embedding.enrichment.lastfmTags = !!en.lastfmTags;
+      }
+      if (en.lyrics !== undefined) {
+        next.embedding.enrichment.lyrics = !!en.lyrics;
+      }
+    }
+  }
   if ('skills' in patch) {
     const sk = patch.skills || {};
     if (sk.enabled !== undefined) {
@@ -1246,7 +1488,17 @@ export async function update(patch) {
   }
 
   cache = next;
-  await writeFile(SETTINGS_PATH, JSON.stringify(next, null, 2));
+  // shows + schedule are persisted to their own file (schedule.json); strip
+  // them from the settings.json payload so legacy installs migrate forward
+  // on the first write. The in-memory `cache` keeps the full shape so
+  // resolveActiveShow / getEffectivePersona / the integrity sweep all
+  // continue to work against one merged view.
+  const { shows: _shows, schedule: _schedule, ...settingsPersist } = next;
+  await writeFile(SETTINGS_PATH, JSON.stringify(settingsPersist, null, 2));
+  await writeFile(
+    SCHEDULE_PATH,
+    JSON.stringify({ shows: next.shows, schedule: next.schedule }, null, 2),
+  );
   await writeLiquidsoapSettings(next);
   return { saved: next, requiresRestart: restart };
 }

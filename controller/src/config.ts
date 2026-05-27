@@ -79,6 +79,39 @@ export const config = {
     // Empty → use Chatterbox's built-in default voice.
     referenceWav: process.env.CHATTERBOX_REFERENCE_WAV || '',
   },
+  // PocketTTS is opt-in alongside Chatterbox — build with
+  // `--build-arg WITH_POCKETTTS=1` (see docker/Dockerfile.controller) to
+  // create the venv + warm the model at these paths. pocketTts.isAvailable()
+  // does an existsSync on `python`, so an image built without the arg reports
+  // unavailable and the dispatcher falls back to Piper. The 100M-param model
+  // is small (~CPU-only) but the runtime drag of torch is the reason it's
+  // opt-in rather than baked into the default image.
+  pocketTts: {
+    python: process.env.POCKET_TTS_PYTHON || '/opt/pocket-tts/venv/bin/python',
+    workerScript: process.env.POCKET_TTS_WORKER || '/app/scripts/pocket_tts_worker.py',
+    // Built-in voice id. Settings layer constrains the UI to a curated list
+    // (POCKET_TTS_VOICES); anything else still passes through to the worker,
+    // which falls back to the default when an id isn't recognised.
+    defaultVoice: process.env.POCKET_TTS_VOICE || 'alba',
+  },
+  // Optional sidecar that hosts Chatterbox + PocketTTS over HTTP. Set
+  // TTS_HEAVY_URL in the controller's environment and add the `tts-heavy`
+  // profile to compose to enable it. Both audio/chatterbox.ts and
+  // audio/pocketTts.ts prefer the sidecar when the URL is set, falling back
+  // to the in-process WITH_*=1 build path when it isn't. See
+  // docker/Dockerfile.tts-heavy + docker/tts-heavy/server.py for the service.
+  ttsHeavy: {
+    url: process.env.TTS_HEAVY_URL || '',
+    // isAvailable() in remote mode caches the result of a /health probe and
+    // re-runs it on this interval so a sidecar that comes up after the
+    // controller is reflected without a restart, and one that goes down
+    // flips to unavailable within ~30s (dispatcher then falls back to Piper).
+    probeIntervalMs: parseInt(process.env.TTS_HEAVY_PROBE_MS || '30000', 10),
+    // Per-request HTTP timeout. Inference itself is bounded by the engine
+    // modules' own request timeouts (CHATTERBOX_REQUEST_TIMEOUT_MS,
+    // POCKET_TTS_REQUEST_TIMEOUT_MS); this is the network/connect ceiling.
+    requestTimeoutMs: parseInt(process.env.TTS_HEAVY_TIMEOUT_MS || '180000', 10),
+  },
   icecast: {
     // Public status JSON — listener counts + per-mount metadata. No auth.
     // Icecast lives inside the merged `broadcast` container; its hostname on
