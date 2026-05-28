@@ -118,13 +118,42 @@ function clientMintId() {
   return 'p_' + [...b].map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
-// 512×512 PNG output target. The controller hard-caps at 300 KB; a center-
-// cropped 512×512 PNG from a typical phone photo lands well under that.
+// 512×512 output target. The controller hard-caps the decoded image at 300 KB
+// and the JSON body at 600 KB; a center-cropped 512×512 WebP from a typical
+// phone photo lands in the tens of KB, well under both.
 const AVATAR_TARGET_PX = 512;
 
-// Resize + center-crop the operator-picked image to a square PNG, returned as
-// a data URL ready for POSTing. Done entirely client-side so we never need a
-// server-side image library.
+// DiceBear styles to roll through when the operator clicks Generate. Each
+// click picks one at random along with a fresh random seed, so re-clicking
+// produces a different face. Lorelei / notionists / personas / open-peeps are
+// illustrated humans; bottts-neutral / micah / fun-emoji add a robot/abstract
+// option so the operator can keep clicking until they land on a vibe that
+// fits the persona. All return PNG at the size we ask for, with permissive
+// CORS — the fetch can run in the browser.
+const DICEBEAR_STYLES = [
+  'lorelei', 'notionists', 'personas', 'open-peeps',
+  'micah', 'bottts-neutral', 'fun-emoji',
+];
+
+async function fetchDicebearAvatar(): Promise<string> {
+  const style = DICEBEAR_STYLES[Math.floor(Math.random() * DICEBEAR_STYLES.length)];
+  // Random seed so two clicks never produce the same face.
+  const seed = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const url = `https://api.dicebear.com/9.x/${style}/png?seed=${encodeURIComponent(seed)}&size=${AVATAR_TARGET_PX}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`DiceBear fetch failed (${res.status})`);
+  const blob = await res.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(r.error || new Error('failed to read DiceBear PNG'));
+    r.readAsDataURL(blob);
+  });
+}
+
+// Resize + center-crop the operator-picked image to a square, returned as a
+// compressed (WebP, JPEG fallback) data URL ready for POSTing. Done entirely
+// client-side so we never need a server-side image library.
 async function fileToAvatarDataUrl(file: File): Promise<string> {
   if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
     throw new Error('please pick a PNG, JPEG, or WebP image');
@@ -145,7 +174,16 @@ async function fileToAvatarDataUrl(file: File): Promise<string> {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, AVATAR_TARGET_PX, AVATAR_TARGET_PX);
-    return canvas.toDataURL('image/png');
+    // Compressed export — an uncompressed 512×512 PNG is ~1 MB raw / ~1.33 MB
+    // base64, which blows past the controller's 600 KB JSON cap, so only tiny
+    // source images used to get through. WebP keeps a typical avatar in the
+    // tens-of-KB range and preserves transparency; JPEG is the universal
+    // fallback for the rare browser whose canvas can't emit WebP (it silently
+    // returns a data:image/png URL in that case).
+    const webp = canvas.toDataURL('image/webp', 0.85);
+    return webp.startsWith('data:image/webp')
+      ? webp
+      : canvas.toDataURL('image/jpeg', 0.85);
   } finally {
     bitmap.close?.();
   }
@@ -167,9 +205,10 @@ function PersonaAvatarPicker(props: {
   tick: number;
   uploading: boolean;
   onPick: (file: File) => void;
+  onGenerate: () => void;
   onClear: () => void;
 }) {
-  const { persona, tick, uploading, onPick, onClear } = props;
+  const { persona, tick, uploading, onPick, onGenerate, onClear } = props;
   const inputRef = useRef<HTMLInputElement | null>(null);
   // The public endpoint serves a 1×1 transparent placeholder when no avatar
   // is set; rather than render that as a tiny grey square, fall back to
@@ -211,18 +250,18 @@ function PersonaAvatarPicker(props: {
           e.target.value = '';
         }}
       />
-      <div className="flex flex-wrap gap-1.5">
-        <Btn sm onClick={() => inputRef.current?.click()} disabled={uploading}>
+      <div className="grid w-[96px] gap-1.5">
+        <Btn sm className="w-full justify-center" onClick={() => inputRef.current?.click()} disabled={uploading}>
           {uploading ? '…' : hasAvatar ? 'Replace' : 'Upload'}
         </Btn>
+        <Btn sm className="w-full justify-center" onClick={onGenerate} disabled={uploading} title="Random DiceBear avatar — click again for a different one">
+          Generate
+        </Btn>
         {hasAvatar && (
-          <Btn sm tone="danger" onClick={onClear} disabled={uploading}>
+          <Btn sm tone="danger" className="w-full justify-center" onClick={onClear} disabled={uploading}>
             Remove
           </Btn>
         )}
-      </div>
-      <div className="text-[10px] leading-[1.4] text-muted">
-        Square crop, 512px. PNG/JPEG/WebP.
       </div>
     </div>
   );
@@ -417,6 +456,37 @@ export default function PersonasPanel() {
       );
       setAvatarTick(t => t + 1);
       notify.ok('avatar uploaded');
+    } catch (e) {
+      notify.err(errorMessage(e));
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  const generateAvatar = async (personaId: string) => {
+    setUploadingId(personaId);
+    try {
+      const dataUrl = await fetchDicebearAvatar();
+      const r = await adminFetch(`/personas/${encodeURIComponent(personaId)}/avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl }),
+      });
+      const j = (await r.json().catch(() => ({}))) as { error?: string; avatar?: string };
+      if (!r.ok) throw new Error(j.error || `failed (${r.status})`);
+      const filename = j.avatar || '';
+      setForm(f =>
+        f
+          ? {
+              ...f,
+              personas: f.personas.map(p =>
+                p.id === personaId ? { ...p, avatar: filename } : p,
+              ),
+            }
+          : f,
+      );
+      setAvatarTick(t => t + 1);
+      notify.ok('avatar generated');
     } catch (e) {
       notify.err(errorMessage(e));
     } finally {
@@ -741,38 +811,41 @@ export default function PersonasPanel() {
               </>
             }
           >
-            <div className="stack-mobile grid grid-cols-[96px_1fr_1fr] items-start gap-4">
+            <div className="stack-mobile grid grid-cols-[96px_1fr] items-start gap-4">
               <PersonaAvatarPicker
                 persona={focused}
                 tick={avatarTick}
                 uploading={uploadingId === focused.id}
                 onPick={file => uploadAvatar(focused.id, file)}
+                onGenerate={() => generateAvatar(focused.id)}
                 onClear={() => clearAvatar(focused.id)}
               />
-              <div className="field">
-                <Label>On-air name</Label>
-                <Input
-                  value={focused.name}
-                  maxLength={NAME_MAX}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setPersona(safeIdx, { name: e.target.value })}
-                  className={focused.name.trim() ? 'border-ink' : 'border-[var(--danger)]'}
-                />
-                <div className="field-hint">
-                  Shown in the player and injected into every prompt as <code>{'{name}'}</code>.
-                  <span className="ml-2 text-muted">{focused.name.trim().length} / {NAME_MAX}</span>
+              <div className="grid gap-4">
+                <div className="field">
+                  <Label>On-air name</Label>
+                  <Input
+                    value={focused.name}
+                    maxLength={NAME_MAX}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setPersona(safeIdx, { name: e.target.value })}
+                    className={focused.name.trim() ? 'border-ink' : 'border-[var(--danger)]'}
+                  />
+                  <div className="field-hint">
+                    Shown in the player and injected into every prompt as <code>{'{name}'}</code>.
+                    <span className="ml-2 text-muted">{focused.name.trim().length} / {NAME_MAX}</span>
+                  </div>
                 </div>
-              </div>
-              <div className="field">
-                <Label>Tagline</Label>
-                <Input
-                  value={focused.tagline}
-                  maxLength={TAGLINE_MAX}
-                  placeholder="e.g. late-night drift"
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setPersona(safeIdx, { tagline: e.target.value })}
-                />
-                <div className="field-hint">
-                  A short line shown alongside the persona. Optional.
-                  <span className="ml-2 text-muted">{focused.tagline.trim().length} / {TAGLINE_MAX}</span>
+                <div className="field">
+                  <Label>Tagline</Label>
+                  <Input
+                    value={focused.tagline}
+                    maxLength={TAGLINE_MAX}
+                    placeholder="e.g. late-night drift"
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setPersona(safeIdx, { tagline: e.target.value })}
+                  />
+                  <div className="field-hint">
+                    A short line shown alongside the persona. Optional.
+                    <span className="ml-2 text-muted">{focused.tagline.trim().length} / {TAGLINE_MAX}</span>
+                  </div>
                 </div>
               </div>
             </div>
