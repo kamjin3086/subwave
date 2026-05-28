@@ -37,7 +37,10 @@ import { getSetupStatus } from './setup/firstRun.js';
 assertAdminConfigured();
 
 const app = express();
-app.use(express.json());
+// Global cap covers small JSON payloads everywhere; the persona-avatar route
+// re-applies its own (slightly larger) cap on top via per-route json middleware.
+// The default 100 KB was below the 50–300 KB data URLs the avatar picker posts.
+app.use(express.json({ limit: '600kb' }));
 app.use(cors);
 
 // Routes. `requireAdmin` is applied per-route inside the admin modules.
