@@ -16,7 +16,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ai-sdk-ollama';
 import * as settings from '../../../settings.js';
-import { llmCfg, ollamaBaseUrl } from './registry.js';
+import { llmCfg, ollamaBaseUrl, loccaEmbedBaseUrl } from './registry.js';
 
 // Separate from the registry's language-model cache — the signature is prefixed
 // `embed|` so there's no key overlap, and keeping it local avoids exporting a
@@ -46,6 +46,9 @@ function defaultEmbeddingModelFor(provider: string): string {
     case 'anthropic':
       // No first-party Anthropic embedding API. We resolve via openai.
       return 'text-embedding-3-small';
+    case 'locca':
+      // Local llama.cpp embedding server — the homelab default model.
+      return 'nomic-embed-text';
     case 'ollama':
     default:
       return 'nomic-embed-text';
@@ -67,49 +70,97 @@ function defaultEmbeddingDimFor(model: string): number {
   return 768; // homelab default until a probe says otherwise
 }
 
+// Resolved embedding config. `settings.embedding` overrides settings.llm field
+// by field; `overrides` (e.g. unsaved form values from the probe endpoint) win
+// over both. Mirrors the precedence in embeddingCfg().
+export interface EmbeddingCfg {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  apiKey: string;
+  ollamaUrl: string;
+  baseUrl: string;
+}
+
+export function resolveEmbeddingCfg(overrides: Partial<EmbeddingCfg> = {}): EmbeddingCfg {
+  const base = embeddingCfg();
+  return {
+    enabled: overrides.enabled ?? base.enabled,
+    // '' is meaningful for provider (= follow llm), so only override when a
+    // non-empty value is supplied.
+    provider: overrides.provider || base.provider,
+    model: overrides.model ?? base.model,
+    apiKey: overrides.apiKey || base.apiKey,
+    ollamaUrl: overrides.ollamaUrl || base.ollamaUrl,
+    baseUrl: overrides.baseUrl || base.baseUrl,
+  };
+}
+
+// Effective base URL for the openai-compatible embedding transport. `locca`
+// defaults to its dedicated EMBED server (`locca embed`, port 8090) — NOT the
+// chat default — so first-class locca embeddings work with a blank field and
+// never collapse to a relative `/embeddings` URL (fetch rejects that as "Failed
+// to parse URL"). Plain `openai-compatible` has no sane default, so '' here
+// means "no server configured" and the caller errors.
+export function embeddingBaseUrl(cfg: { provider: string; baseUrl?: string }): string {
+  if (cfg.provider === 'locca') return loccaEmbedBaseUrl(cfg);
+  return cfg.baseUrl || '';
+}
+
+// Build an AI SDK text-embedding model from an explicit, already-resolved cfg.
+// No caching (callers that want it wrap, like embeddingModel below) — the probe
+// endpoint deliberately builds a fresh one-off client per test.
+export function buildEmbeddingModel(cfg: EmbeddingCfg) {
+  const id = cfg.model || defaultEmbeddingModelFor(cfg.provider);
+  switch (cfg.provider) {
+    case 'openai':
+    case 'anthropic': {
+      // Anthropic has no first-party embedding model; punt to OpenAI.
+      const provider = createOpenAI(cfg.apiKey ? { apiKey: cfg.apiKey } : {});
+      return provider.textEmbeddingModel(id);
+    }
+    case 'openai-compatible':
+    case 'locca': {
+      // locca = a self-hosted openai-compatible embedding server (run via
+      // `locca embed`); same transport, the operator points baseUrl at it.
+      // Resolve the base URL (locca defaults to the host) and refuse a blank
+      // one with an actionable message — otherwise createOpenAI emits a
+      // relative `/embeddings` URL that fetch can't parse.
+      const baseURL = embeddingBaseUrl(cfg);
+      if (!baseURL) {
+        throw new Error(
+          'No embedding server URL is set. In /admin/settings → Embedding, set ' +
+            'the base URL to your embedding server (e.g. http://host:8090/v1).',
+        );
+      }
+      const provider = createOpenAI({
+        baseURL,
+        apiKey: cfg.apiKey || 'unused',
+        name: cfg.provider,
+      });
+      return provider.textEmbeddingModel(id);
+    }
+    case 'google': {
+      const provider = createGoogleGenerativeAI(cfg.apiKey ? { apiKey: cfg.apiKey } : {});
+      return provider.textEmbeddingModel(id);
+    }
+    case 'ollama':
+    default: {
+      const provider = createOllama({ baseURL: ollamaBaseUrl(cfg as any) });
+      return provider.textEmbeddingModel(id);
+    }
+  }
+}
+
 export function embeddingModel() {
-  const cfg = embeddingCfg();
+  const cfg = resolveEmbeddingCfg();
   const id = cfg.model || defaultEmbeddingModelFor(cfg.provider);
   const sig = `embed|${cfg.provider}|${id}|${cfg.apiKey || ''}|${cfg.ollamaUrl}|${cfg.baseUrl}`;
 
   const cached = embedCache.get(sig);
   if (cached) return cached;
 
-  let model;
-  switch (cfg.provider) {
-    case 'openai': {
-      const provider = createOpenAI(cfg.apiKey ? { apiKey: cfg.apiKey } : {});
-      model = provider.textEmbeddingModel(id);
-      break;
-    }
-    case 'openai-compatible': {
-      const provider = createOpenAI({
-        baseURL: cfg.baseUrl,
-        apiKey: cfg.apiKey || 'unused',
-        name: 'openai-compatible',
-      });
-      model = provider.textEmbeddingModel(id);
-      break;
-    }
-    case 'google': {
-      const provider = createGoogleGenerativeAI(cfg.apiKey ? { apiKey: cfg.apiKey } : {});
-      model = provider.textEmbeddingModel(id);
-      break;
-    }
-    case 'anthropic': {
-      // Anthropic has no first-party embedding model; punt to OpenAI.
-      const provider = createOpenAI(cfg.apiKey ? { apiKey: cfg.apiKey } : {});
-      model = provider.textEmbeddingModel(id);
-      break;
-    }
-    case 'ollama':
-    default: {
-      const provider = createOllama({ baseURL: ollamaBaseUrl(cfg as any) });
-      model = provider.textEmbeddingModel(id);
-      break;
-    }
-  }
-
+  const model = buildEmbeddingModel(cfg);
   embedCache.set(sig, model);
   return model;
 }
@@ -132,15 +183,25 @@ export function embeddingEnabled(): boolean {
 // Surface enough config for the tagger to (a) write a useful error message
 // and (b) auto-pull a missing model on the Ollama provider. Intentionally
 // just the fields callers need — no secrets, no live SDK clients.
-export function embeddingProviderInfo(): {
+// Display/diagnostic info for an explicit cfg — resolves the model name and the
+// effective Ollama URL. Shared by embeddingProviderInfo() (saved) and the probe
+// endpoint (unsaved overrides) so error messages name the right server.
+export function embeddingInfoOf(cfg: EmbeddingCfg): {
   provider: string;
   model: string;
   ollamaUrl: string;
 } {
-  const cfg = embeddingCfg();
   return {
     provider: cfg.provider,
     model: cfg.model || defaultEmbeddingModelFor(cfg.provider),
     ollamaUrl: cfg.provider === 'ollama' ? ollamaBaseUrl(cfg as any) : '',
   };
+}
+
+export function embeddingProviderInfo(): {
+  provider: string;
+  model: string;
+  ollamaUrl: string;
+} {
+  return embeddingInfoOf(embeddingCfg());
 }

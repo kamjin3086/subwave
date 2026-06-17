@@ -25,10 +25,10 @@ import BackupPanel from './BackupPanel';
 const SECTIONS = [
   { id: 'station',  label: 'Station', hint: 'name · location · timezone' },
   { id: 'theme',    label: 'Theme', hint: 'station-wide palette' },
-  { id: 'tts',      label: 'TTS voice', hint: 'default engine' },
   { id: 'llm',      label: 'LLM provider', hint: 'model routing' },
-  { id: 'search',   label: 'Web search', hint: 'live-facts backend' },
+  { id: 'tts',      label: 'TTS voice', hint: 'default engine' },
   { id: 'library',  label: 'Library tagger', hint: 'embedding · propagation' },
+  { id: 'search',   label: 'Web search', hint: 'live-facts backend' },
   { id: 'jingles',  label: 'Jingles', hint: 'stingers' },
   { id: 'sfx',      label: 'Sound FX', hint: 'agent stingers' },
   { id: 'scrobble', label: 'Scrobbling', hint: 'last.fm · listenbrainz' },
@@ -51,8 +51,9 @@ const LLM_ENV_VARS: Record<string, string> = {
 };
 
 const LLM_PROVIDER_LABELS: Record<string, string> = {
-  ollama: 'Ollama — local homelab',
-  'openai-compatible': 'OpenAI-compatible — self-hosted (llama.cpp, vLLM, LM Studio)',
+  ollama: 'Ollama — local/cloud',
+  locca: 'locca — local llama.cpp (host)',
+  'openai-compatible': 'OpenAI-compatible — llama.cpp, vLLM, LM Studio',
   anthropic: 'Anthropic — Claude',
   openai: 'OpenAI — GPT',
   google: 'Google — Gemini',
@@ -63,6 +64,25 @@ const LLM_PROVIDER_LABELS: Record<string, string> = {
 
 const llmProviderLabel = (id: string | undefined): string =>
   (id && LLM_PROVIDER_LABELS[id]) || id || '—';
+
+// Suggested embedding model ids per provider — clickable chips under the Model
+// field so operators don't have to guess a valid name. The #1 trip-up is typing
+// an HF/locca repo id like "nomic-ai/nomic-embed-text-v1.5-GGUF" as an Ollama
+// tag, which 404s; Ollama wants the short tag (nomic-embed-text). dim is shown
+// so you can match the vector length of an already-tagged library.
+const EMBED_MODEL_SUGGESTIONS: Record<string, { id: string; dim: number }[]> = {
+  ollama: [
+    { id: 'nomic-embed-text', dim: 768 },
+    { id: 'mxbai-embed-large', dim: 1024 },
+    { id: 'bge-m3', dim: 1024 },
+    { id: 'all-minilm', dim: 384 },
+  ],
+  openai: [
+    { id: 'text-embedding-3-small', dim: 1536 },
+    { id: 'text-embedding-3-large', dim: 3072 },
+  ],
+  google: [{ id: 'text-embedding-004', dim: 768 }],
+};
 
 const SEARCH_PROVIDER_LABELS: Record<string, string> = {
   duckduckgo: 'DuckDuckGo — free, no key',
@@ -133,6 +153,8 @@ interface EmbeddingForm {
   enabled: boolean;
   provider: string;          // empty → follow llm.provider
   model: string;             // empty → sensible default per provider
+  baseUrl: string;           // dedicated embedding server URL (openai-compatible / locca); empty → inherit llm
+  ollamaUrl: string;         // dedicated embedding server URL (ollama); empty → inherit llm
   seedCount: string;         // '0' = auto
   knnNeighbours: string;
   moodVoteThreshold: string;
@@ -232,6 +254,8 @@ interface SettingsData {
       enabled?: boolean;
       provider?: string;
       model?: string;
+      baseUrl?: string;
+      ollamaUrl?: string;
       seedCount?: number;
       knnNeighbours?: number;
       moodVoteThreshold?: number;
@@ -270,6 +294,7 @@ interface SettingsData {
   };
   jingles?: JingleEntry[];
   libraryStats?: { total?: number };
+  tagger?: { running?: boolean };
   env?: Record<string, unknown>;
   streamOnAir?: boolean;
   // What timezone '' (Auto) resolves to — the controller's own zone.
@@ -392,6 +417,8 @@ export default function SettingsPanel() {
         enabled: v.embedding?.enabled ?? true,
         provider: v.embedding?.provider ?? '',
         model: v.embedding?.model ?? '',
+        baseUrl: v.embedding?.baseUrl ?? '',
+        ollamaUrl: v.embedding?.ollamaUrl ?? '',
         seedCount: String(v.embedding?.seedCount ?? 0),
         knnNeighbours: String(v.embedding?.knnNeighbours ?? 5),
         moodVoteThreshold: String(v.embedding?.moodVoteThreshold ?? 0.6),
@@ -1609,7 +1636,7 @@ function LlmSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
                   ? 'nemotron-3-super:cloud'
                   : form.llm.provider === 'deepseek'
                     ? 'deepseek-v4-flash'
-                    : form.llm.provider === 'openai-compatible'
+                    : form.llm.provider === 'openai-compatible' || form.llm.provider === 'locca'
                       ? 'Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf'
                       : 'model id'
               }
@@ -1626,7 +1653,7 @@ function LlmSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
                       ? 'Gemini model id, e.g. “gemini-2.5-flash”.'
                       : form.llm.provider === 'deepseek'
                         ? 'DeepSeek model id. Leave blank for the “deepseek-v4-flash” default.'
-                        : form.llm.provider === 'openai-compatible'
+                        : form.llm.provider === 'openai-compatible' || form.llm.provider === 'locca'
                           ? 'Model id exactly as the server reports it at /v1/models — required.'
                           : 'Model id for the chosen provider — required.'}
             </div>
@@ -1648,6 +1675,35 @@ function LlmSection({ data, form, setForm, busy, saveSettings }: SectionProps) {
                 including the <code>/v1</code> suffix. Must be reachable from the
                 controller container — use the host’s LAN or Tailscale IP, not
                 <code>127.0.0.1</code>.
+              </div>
+            </div>
+          )}
+
+          {form.llm.provider === 'locca' && (
+            <div className="field">
+              <Label>locca server base URL</Label>
+              <Input
+                value={form.llm.baseUrl}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  setForm(f => ({ ...f, llm: { ...f.llm, baseUrl: e.target.value } }))
+                }
+                placeholder="http://host.docker.internal:8080/v1"
+                className="max-w-[360px]"
+              />
+              <div className="field-hint">
+                Leave blank to use the locca server on the host
+                (<code>http://host.docker.internal:8080/v1</code>). Override only
+                for a non-default port or a remote host. Bring a model up with{' '}
+                <code>locca serve &lt;model&gt; --yes</code>; the model id below is
+                what locca reports at <code>/v1/models</code>.{' '}
+                <a
+                  href="https://github.com/perminder-klair/locca"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-bold text-vermilion underline decoration-[1.5px] underline-offset-2"
+                >
+                  locca on GitHub ↗
+                </a>
               </div>
             </div>
           )}
@@ -2125,6 +2181,8 @@ function LibrarySection({ data, form, setForm, busy, saveSettings }: SectionProp
       enabled: e.enabled,
       provider: e.provider,
       model: e.model,
+      baseUrl: e.baseUrl,
+      ollamaUrl: e.ollamaUrl,
       seedCount: parseInt(e.seedCount, 10) || 0,
       knnNeighbours: parseInt(e.knnNeighbours, 10) || 5,
       moodVoteThreshold: parseFloat(e.moodVoteThreshold) || 0.6,
@@ -2140,10 +2198,91 @@ function LibrarySection({ data, form, setForm, busy, saveSettings }: SectionProp
   const savedEmbedding = data.values?.embedding || {};
   const llmProvider = data.values?.llm?.provider || 'ollama';
   const effectiveProvider = e.provider || llmProvider;
+  const embedSuggestions = EMBED_MODEL_SUGGESTIONS[effectiveProvider] ?? [];
 
   // Provider list comes from /settings.llm.providers (the canonical LLM list).
   // Anthropic has no first-party embedding API — flagged in the hint.
   const providers = data.llm?.providers || ['ollama'];
+
+  // --- Guided setup: probe the endpoint up front, detect a locca embed server,
+  // and kick the tagger from here, instead of failing mid-run (#405 follow-up).
+  const { adminFetch } = useAdminAuth();
+  const [probe, setProbe] = useState<
+    { ok: boolean; dim: number | null; code: string; message: string } | null
+  >(null);
+  const [probing, setProbing] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [tagBusy, setTagBusy] = useState(false);
+  const taggerRunning = !!data.tagger?.running;
+  // Local servers (llama.cpp/locca) need a dedicated embedding endpoint; cloud
+  // and Ollama providers serve embeddings on the same endpoint as chat.
+  const needsServerUrl = effectiveProvider === 'locca' || effectiveProvider === 'openai-compatible';
+
+  const probeQuery = () => {
+    const p = new URLSearchParams();
+    if (e.provider) p.set('provider', e.provider);
+    if (e.model) p.set('model', e.model);
+    if (e.baseUrl) p.set('baseUrl', e.baseUrl);
+    if (e.ollamaUrl) p.set('ollamaUrl', e.ollamaUrl);
+    return p.toString();
+  };
+
+  const runProbe = async () => {
+    setProbing(true);
+    setProbe(null);
+    try {
+      const r = await adminFetch(`/settings/embedding/probe?${probeQuery()}`);
+      setProbe(await r.json());
+    } catch (err) {
+      setProbe({ ok: false, dim: null, code: 'unknown', message: errorMessage(err) });
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  // Find a locca embedding server on its default port (8090), pre-fill the form,
+  // and confirm it actually embeds.
+  const detect = async () => {
+    setDetecting(true);
+    setProbe(null);
+    const url = 'http://host.docker.internal:8090/v1';
+    try {
+      let model = 'nomic-embed-text';
+      try {
+        const d = await (
+          await adminFetch(`/settings/llm/discover?baseUrl=${encodeURIComponent(url)}`)
+        ).json();
+        if (d.reachable && Array.isArray(d.models) && d.models.length) model = d.models[0];
+      } catch {
+        /* discovery is best-effort — fall through and probe with the default model */
+      }
+      const p = new URLSearchParams({ provider: 'locca', baseUrl: url, model });
+      const j = await (await adminFetch(`/settings/embedding/probe?${p.toString()}`)).json();
+      setProbe(j);
+      if (j.ok) {
+        setForm(f => ({ ...f, embedding: { ...f.embedding, provider: 'locca', baseUrl: url, model } }));
+      }
+    } catch (err) {
+      setProbe({ ok: false, dim: null, code: 'unknown', message: errorMessage(err) });
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const startTagging = async () => {
+    setTagBusy(true);
+    try {
+      const r = await adminFetch('/tag-library', { method: 'POST' });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) notify.ok('tagging started — watch progress on the Library tab');
+      else notify.err(j.error || 'could not start the tagger');
+    } catch (err) {
+      notify.err(errorMessage(err));
+    } finally {
+      setTagBusy(false);
+    }
+  };
 
   return (
     <>
@@ -2163,6 +2302,25 @@ function LibrarySection({ data, form, setForm, busy, saveSettings }: SectionProp
           },
         ]}
       />
+
+      {/* Plain-language intro + at-a-glance readiness. */}
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-[560px] text-[12px] leading-[1.6] text-muted">
+          Auto-tagging reads each track once and labels its mood + energy so the DJ
+          picks tracks that fit the room. It needs a small <strong>embedding</strong>{' '}
+          model — separate from your chat LLM. Set it up below, hit{' '}
+          <strong>Test</strong>, then run the tagger.
+        </p>
+        {probing || detecting ? (
+          <Pill tone="default" dot>checking…</Pill>
+        ) : probe?.ok ? (
+          <Pill tone="accent" dot>ready{probe.dim ? ` · ${probe.dim}-dim` : ''}</Pill>
+        ) : probe ? (
+          <Pill tone="ink" dot className="!border-red-400 !text-red-400">needs attention</Pill>
+        ) : (
+          <Pill tone="default">not tested</Pill>
+        )}
+      </div>
 
       <Card title="Tagger" sub="enabled?">
         <div className="grid grid-cols-[1fr_auto] items-center gap-4">
@@ -2188,7 +2346,7 @@ function LibrarySection({ data, form, setForm, busy, saveSettings }: SectionProp
         </div>
       </Card>
 
-      <Card title="Embedding provider" sub="vector model">
+      <Card title="Embedding server" sub="where embeddings come from">
         <div className="grid gap-[18px]">
           <div className="field">
             <Label>Provider</Label>
@@ -2230,7 +2388,7 @@ function LibrarySection({ data, form, setForm, busy, saveSettings }: SectionProp
                 setForm(f => ({ ...f, embedding: { ...f.embedding, model: ev.target.value } }))
               }
               placeholder={
-                effectiveProvider === 'ollama'
+                effectiveProvider === 'ollama' || effectiveProvider === 'locca'
                   ? 'nomic-embed-text'
                   : effectiveProvider === 'openai' || effectiveProvider === 'openai-compatible'
                     ? 'text-embedding-3-small'
@@ -2246,10 +2404,142 @@ function LibrarySection({ data, form, setForm, busy, saveSettings }: SectionProp
               hit <strong>Re-seed</strong> on the Library tab (or run{' '}
               <code>--reseed</code>) to drop and rebuild the vectors.
             </div>
+            {embedSuggestions.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-muted">Suggested:</span>
+                {embedSuggestions.map(s => (
+                  <Btn
+                    key={s.id}
+                    sm
+                    onClick={() =>
+                      setForm(f => ({ ...f, embedding: { ...f.embedding, model: s.id } }))
+                    }
+                    title={`Use ${s.id} (${s.dim}-dim)`}
+                  >
+                    {s.id}
+                    <span className="ml-1 text-muted">{s.dim}d</span>
+                  </Btn>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {(effectiveProvider === 'openai-compatible' || effectiveProvider === 'locca') && (
+            <div className="field">
+              <Label>Embedding server base URL</Label>
+              <Input
+                value={e.baseUrl}
+                onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                  setForm(f => ({ ...f, embedding: { ...f.embedding, baseUrl: ev.target.value } }))
+                }
+                placeholder="http://host.docker.internal:8090/v1"
+                className="max-w-[360px]"
+              />
+              <div className="field-hint">
+                Embeddings need a <strong>dedicated</strong> server — one
+                llama.cpp / locca process can&apos;t serve both chat and
+                embeddings.{' '}
+                {effectiveProvider === 'locca' ? (
+                  <>
+                    Leave blank to use the locca embed server on its default port
+                    (<code>http://host.docker.internal:8090/v1</code>) — start it
+                    with <code>locca embed nomic</code>. Override only for a
+                    non-default port or remote host.
+                  </>
+                ) : (
+                  <>
+                    Leave blank only if this server itself does embeddings;
+                    otherwise run a separate embedding server (
+                    <code>llama-server -m nomic-embed-text-v1.5.Q8_0.gguf --embeddings --pooling mean --port 8090</code>)
+                    and point this at it, including the <code>/v1</code> suffix.
+                  </>
+                )}
+                {' '}Must be reachable from the controller container — use the host
+                LAN/Tailscale IP or <code>host.docker.internal</code>, not{' '}
+                <code>127.0.0.1</code>.
+              </div>
+            </div>
+          )}
+
+          {effectiveProvider === 'ollama' && (
+            <div className="field">
+              <Label>Embedding server URL</Label>
+              <Input
+                value={e.ollamaUrl}
+                onChange={(ev: ChangeEvent<HTMLInputElement>) =>
+                  setForm(f => ({ ...f, embedding: { ...f.embedding, ollamaUrl: ev.target.value } }))
+                }
+                placeholder="http://host.docker.internal:11434"
+                className="max-w-[360px]"
+              />
+              <div className="field-hint">
+                Leave blank to use the same Ollama server as chat (it serves
+                embeddings too). Set this only to run embeddings against a
+                different Ollama host.
+              </div>
+            </div>
+          )}
+
+          {/* Detect a locca embed server + test the endpoint BEFORE a long run. */}
+          <div className="field">
+            <div className="flex flex-wrap items-center gap-2">
+              {needsServerUrl && (
+                <Btn sm onClick={detect} disabled={detecting || probing}>
+                  {detecting ? 'Detecting…' : 'Detect locca server'}
+                </Btn>
+              )}
+              <Btn sm tone="accent" onClick={runProbe} disabled={probing || detecting}>
+                {probing ? 'Testing…' : 'Test embeddings'}
+              </Btn>
+            </div>
+            {probe && (
+              <div
+                className={cn(
+                  'mt-2 max-w-[560px] rounded border px-3 py-2 text-[11px] leading-[1.6] whitespace-pre-wrap',
+                  probe.ok
+                    ? 'border-[var(--accent)] text-[color:var(--accent)]'
+                    : 'border-red-400/50 text-red-300',
+                )}
+              >
+                {probe.ok
+                  ? `✓ Producing embeddings${probe.dim ? ` (${probe.dim}-dim vectors)` : ''} — you're ready to tag.`
+                  : `✗ ${probe.message}`}
+              </div>
+            )}
           </div>
         </div>
       </Card>
 
+      {/* Run the tagger — gated on a green probe so it can't fail mid-job. */}
+      <Card title="Tag the library" sub="run the bulk tagger">
+        <div className="grid grid-cols-[1fr_auto] items-center gap-4">
+          <div className="max-w-[480px] text-[11px] leading-[1.5] text-muted">
+            {taggerRunning
+              ? 'A tagging run is in progress — watch live progress on the Library tab.'
+              : probe?.ok
+                ? 'Embeddings look good. Start the bulk tagger — it runs in the background; watch progress on the Library tab.'
+                : 'Test the embedding endpoint above first — the tagger needs a working embedding server.'}
+          </div>
+          <Btn
+            tone="accent"
+            onClick={startTagging}
+            disabled={tagBusy || taggerRunning || !probe?.ok}
+          >
+            {taggerRunning ? 'Tagging…' : tagBusy ? 'Starting…' : 'Start tagging'}
+          </Btn>
+        </div>
+      </Card>
+
+      {/* Advanced knobs — collapsed by default so newcomers see only the basics. */}
+      <button
+        type="button"
+        onClick={() => setAdvancedOpen(o => !o)}
+        className="mb-1 w-fit text-[11px] font-bold tracking-[0.14em] text-muted uppercase hover:text-ink"
+      >
+        {advancedOpen ? '▾' : '▸'} Advanced — seed count, propagation, enrichment
+      </button>
+      {advancedOpen && (
+        <>
       <Card title="Seed phase" sub="how many tracks to LLM-tag">
         <div className="grid gap-[18px]">
           <div className="field">
@@ -2434,6 +2724,8 @@ function LibrarySection({ data, form, setForm, busy, saveSettings }: SectionProp
           </div>
         </div>
       </Card>
+        </>
+      )}
 
       <SaveBar
         note={`Saved values apply the next time the bulk tagger runs. Current run (if any) keeps its own snapshot.${

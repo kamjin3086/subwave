@@ -8,6 +8,9 @@ export {
   activeModelLabel,
   providerName,
   activeOllamaUrl,
+  loccaBaseUrl,
+  DEFAULT_LOCCA_BASE_URL,
+  noThinkFetch,
 } from './internal/provider/registry.js';
 
 export { primaryLeg, fallbackLeg, probeLegReachable } from './internal/provider/legs.js';
@@ -19,4 +22,8 @@ export {
   activeEmbeddingDim,
   embeddingEnabled,
   embeddingProviderInfo,
+  embeddingInfoOf,
+  resolveEmbeddingCfg,
+  buildEmbeddingModel,
 } from './internal/provider/embedding.js';
+export type { EmbeddingCfg } from './internal/provider/embedding.js';
